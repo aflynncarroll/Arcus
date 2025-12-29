@@ -1,0 +1,387 @@
+---
+title: "quantitative_measurements"
+output: html_document
+date: "2025-09-16"
+---
+
+https://pmc.ncbi.nlm.nih.gov/articles/PMC3657475/#s2
+procedure order results:
+RED BLOOD CELL (RBC) COUNT
+RBC
+MCHC
+PLT
+PLTS
+WHITE BLOOD CELL (WBC) COUNT
+WBC
+
+
+###############################################################################################
+# library
+###############################################################################################
+
+```{r packages}
+
+library(bigrquery)
+library(tidyverse)
+library(dplyr)
+library(devtools)
+library(data.table)
+library(ggplot2)
+library(cowplot)
+
+```
+
+###############################################################################################
+# read in data
+###############################################################################################
+
+```{r}
+
+pheno_v2 <- read_tsv("/mnt/arcus/lab/users/flynncarra/projects/20251103_phewas_v3_phenotypes/array_eur_total_phe_200_v2.tsv")
+
+```
+
+```{r get project id}
+
+bq_auth()
+project_id <- bq_projects()[1]
+
+```
+
+```{r}
+
+query_flowsheet_template <- "
+SELECT
+  *
+FROM
+  arcus.flowsheet_template
+"
+flowsheet_template_df <- bq_project_query(project_id, query_flowsheet_template) %>%
+  bq_table_download(bigint = "integer64") %>%
+  as_tibble()
+head(flowsheet_template_df)
+
+```
+
+```{r flowsheet_measure}
+
+query_flowsheet_measure <- "
+SELECT
+  pat_id,
+  flowsheet_name,
+  flowsheet_value
+FROM
+  arcus.flowsheet_measure
+"
+flowsheet_measure_df <- bq_project_query(project_id, query_flowsheet_measure) %>%
+  bq_table_download(bigint = "integer64") %>%
+  as_tibble()
+head(flowsheet_measure_df)
+
+```
+
+```{r}
+
+query_flowsheet_names <- "
+SELECT DISTINCT
+  flowsheet_name
+FROM
+  arcus.flowsheet_measure
+ORDER BY
+  flowsheet_name
+"
+
+flowsheet_names_df <- bq_project_query(project_id, query_flowsheet_names) %>%
+  bq_table_download() %>%
+  as_tibble()
+
+head(flowsheet_names_df)
+
+
+```
+
+```{r}
+
+write.csv(flowsheet_names_df, "flowsheet_names_unique.csv")
+
+```
+
+flowsheet_values are the actual values
+```{r}
+
+query_flowsheet_values <- "
+SELECT DISTINCT
+  flowsheet_value
+FROM
+  arcus.flowsheet_measure
+ORDER BY
+  flowsheet_value
+"
+
+flowsheet_values_df <- bq_project_query(project_id, query_flowsheet_values) %>%
+  bq_table_download() %>%
+  as_tibble()
+
+head(flowsheet_values_df)
+
+
+```
+
+```{r}
+
+rm(flowsheet_values_df)
+
+```
+
+```{r procedure_order_result}
+
+query_procedure_order_result <- "
+SELECT
+  *
+FROM
+  arcus.procedure_order_result
+
+"
+procedure_order_result_df <- bq_project_query(project_id, query_procedure_order_result) %>%
+  bq_table_download(bigint = "integer64") %>%
+  as_tibble()
+head(procedure_order_result_df)
+
+```
+
+```{r}
+
+procedure_order_result_unique <- as.data.frame(unique(procedure_order_result_df$result_component_name))
+
+```
+
+```{r}
+
+write.csv(procedure_order_result_unique, "procedure_order_result_unique.csv")
+
+```
+
+```{r}
+
+subset_flowsheets <- c("ARC AUTISM ANY BEHAVIORS NEED TO BE AWARE OF", "ARC AUTISM ANYTHING ELSE", "ARC AUTISM COMMUNICATION", "ARC AUTISM DEVELOPMENTAL AGE", "ARC AUTISM DIAGNOSIS", "ARC AUTISM MOTIVATORS SUPPORT CHILD", "ARC AUTISM OTHER COMMUNICATION", "ARC AUTISM OTHER RESOURCES", "ARC AUTISM PAST INTERVENTIONS", "ARC AUTISM PRE-MEDICATION", "ARC AUTISM RESOURCES NEEDS FOR DAY OF SURGERY", "ARC AUTISM ROVER", "ARC AUTISM SCHEDULED FIRST", "CHOP PT R TOE WALKING TOOL DOES THE CHILD HAVE A DIAGNOSIS OF AUTISM SPECTRUM DISORDER?", "CHOP R AMB NFU AUTISM DIAGNOSIS", "CHOP R AMB NFU AUTISM HOW WAS DIAGNOSIS MADE", "CHOP R AMB NFU AUTISM MCHAT FOLLOW-UP QUESTIONNAIRE ADMINISTERED", "CHOP R AMB NFU AUTISM MCHAT REFERRED FOR AUTISM EVAL", "CHOP R IP AUTISM CHILDS PROBLEM", "CHOP RIS R SEDATION PRE CALL AUTISM SPECTRUM", "BMI", "HEIGHT")
+
+```
+
+BMI & height have actual values. Some have descriptions but no values -- list or qualitative inputs
+
+```{r}
+
+# Collapse into a comma-separated string for SQL
+flowsheet_list_sql <- paste0("'", paste(subset_flowsheets, collapse = "', '"), "'")
+
+query_flowsheet_subset <- glue::glue("
+SELECT
+  *
+FROM
+  arcus.flowsheet_measure
+WHERE
+  flowsheet_name IN ({flowsheet_list_sql})
+ORDER BY
+  pat_id
+")
+
+flowsheet_subset_df <- bq_project_query(project_id, query_flowsheet_subset) %>%
+  bq_table_download(bigint = "integer64") %>%
+  as_tibble()
+
+
+```
+
+```{r}
+
+query_flowsheet_info <- "
+SELECT
+  *
+FROM
+  arcus.flowsheet_info
+
+"
+flowsheet_info_df <- bq_project_query(project_id, query_flowsheet_info) %>%
+  bq_table_download(bigint = "integer64") %>%
+  as_tibble()
+
+head(flowsheet_infot_df)
+
+```
+
+```{r}
+
+query_patient <- "
+SELECT
+  *
+FROM
+  arcus.patient
+
+"
+patient_df <- bq_project_query(project_id, query_patient) %>%
+  bq_table_download(bigint = "integer64") %>%
+  as_tibble()
+
+head(patient_df)
+
+```
+
+
+```{r encounter}
+
+query_encounter <- "
+SELECT
+  *
+FROM
+  arcus.encounter
+"
+encounter_df <- bq_project_query(project_id, query_encounter) %>%
+  bq_table_download(bigint = "integer64") %>%
+  as_tibble()
+head(encounter_df)
+
+```
+
+```{r}
+
+ c("pat_id", "encounter_id", "effective_age","admit_source_code", "admit_source_name", "height_raw", "height_cm", "weight_kg", "weight_oz", "head_circumference", )
+
+```
+
+###############################################################################################
+# quant blood traits
+###############################################################################################
+
+RED BLOOD CELL (RBC) COUNT
+RBC
+MCHC
+PLT
+PLTS
+WHITE BLOOD CELL (WBC) COUNT
+WBC
+
+
+```{r}
+
+blood_quant <- procedure_order_result_df[procedure_order_result_df$result_component_name %in% c("RED BLOOD CELL (RBC) COUNT", "RBC", "MCHC", "PLT", "PLTS", "WHITE BLOOD CELL (WBC) COUNT", "WBC"),]
+
+```
+
+```{r}
+
+blood_quant %>%
+  group_by(result_component_name) %>%
+  summarise(n_unique_pat = n_distinct(pat_id))
+
+```
+
+```{r}
+
+rw_blood <- blood_quant[blood_quant$result_component_name %in% c("RBC", "WBC"),]
+
+rw_blood <- rw_blood[rw_blood$value_number != 9999999, ]
+
+```
+
+```{r}
+
+ggplot(rw_blood[rw_blood$result_component_name == "WBC",], aes(x = value_number)) +
+  geom_density()
+
+```
+
+```{r}
+
+rw_blood_clean <- rw_blood %>%
+  group_by(result_component_name) %>%
+  mutate(
+    mean_val = mean(value_number, na.rm = TRUE),
+    sd_val   = sd(value_number, na.rm = TRUE)
+  ) %>%
+  # Vectorized filter
+  filter(
+    # Keep all rows that are not RBC/WBC OR within 3 SD for RBC/WBC
+    !(result_component_name %in% c("RBC", "WBC") &
+      (value_number < mean_val - 3 * sd_val |
+       value_number > mean_val + 3 * sd_val))
+  ) %>%
+  select(-mean_val, -sd_val) %>%
+  ungroup()
+
+```
+
+```{r}
+
+rw_blood_clean <- rw_blood_clean[!is.na(rw_blood_clean$result_component_name),]
+
+```
+
+```{r}
+
+ggplot(rw_blood_clean[rw_blood_clean$result_component_name == "WBC",], aes(x = value_number)) +
+  geom_density()
+
+```
+
+```{r}
+
+ggplot(rw_blood_clean[rw_blood_clean$result_component_name == "RBC",], aes(x = value_number)) +
+  geom_density()
+
+```
+
+```{r}
+
+rw_measure  <- rw_blood_clean %>%
+  group_by(pat_id, result_component_name) %>%
+  summarise(
+    max    = if (all(is.na(value_number))) NA_real_ else max(value_number, na.rm = TRUE),
+    min    = if (all(is.na(value_number))) NA_real_ else min(value_number, na.rm = TRUE),
+    mean   = if (all(is.na(value_number))) NA_real_ else mean(value_number, na.rm = TRUE),
+    median = if (all(is.na(value_number))) NA_real_ else median(value_number, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  pivot_wider(
+    names_from   = result_component_name,
+    values_from  = c(max, min, mean, median),
+    names_sep    = "_"
+  )
+
+
+```
+
+```{r}
+
+rw_save <- left_join(pheno_v2[, c("pat_id", "biosample_id", "PC1", "PC2", "PC3", "PC4", "PC5", "PC6", "PC7", "PC8", "PC9", "PC10", "age", "sex", "age_sqr")], rw_measure)
+
+```
+
+```{r}
+
+#rw_save <- rw_save %>%
+  filter(!(is.na(mean_RBC) & is.na(mean_WBC)))
+
+```
+
+```{r save total pheno file in saige friendly format}
+
+write.table(rw_save, 
+            file = "rw_blood_phenos.tsv", 
+            sep = "\t", 
+            quote = FALSE, 
+            row.names = FALSE)
+
+
+```
+
+```{r}
+
+cols <- setdiff(colnames(rw_measure), "pat_id")
+
+```
+
+```{r}
+
+writeLines(cols, "rw_blood_phenos_list.txt")
+
+```

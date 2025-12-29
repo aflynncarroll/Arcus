@@ -1,0 +1,640 @@
+---
+title: "Paper figures for Ancestry/disease"
+author: "Alex Flynn-Carroll"
+date: "2025-12-09"
+output: html_document
+---
+
+###############################################################################################
+# library
+###############################################################################################
+
+```{r packages}
+
+library(tidyverse)
+library(dplyr)
+library(data.table)
+library(ggplot2)
+library(qqman)
+library(PheWAS)
+library(jpeg)
+library(wesanderson)
+library(ggrepel)
+library(circlize)
+library(bigrquery)
+#library(devtools)
+
+```
+
+###############################################################################################
+# read in data
+###############################################################################################
+
+```{r}
+
+ancestry <- read_tsv("../20251008_phewas_saige_pheno/atlas-onekg-pcs-ancestry.tsv")
+
+```
+
+```{r}
+
+manifest <- read.csv("../20251008_phewas_saige_pheno/file_manifest.csv")
+
+```
+
+```{r}
+
+manifest$biosample_id <- as.character(manifest$biosample_id)
+
+```
+
+```{r get project id}
+
+bq_auth()
+project_id <- bq_projects()[1]
+
+```
+
+```{r encounter}
+
+query_encounter_diagnosis <- "
+SELECT
+  encounter_id,
+  pat_id,
+  effective_age
+FROM
+  arcus.encounter
+"
+encounter_df <- bq_project_query(project_id, query_encounter_diagnosis) %>%
+  bq_table_download(bigint = "integer64") %>%
+  as_tibble()
+head(encounter_df)
+
+```
+```{r}
+
+phecodes_count <- read.csv("../20250908_phenotypes_v2/phecodes_counts_by_indv.csv")
+
+phecodes_count <- phecodes_count[ , -1]
+
+```
+
+```{r}
+
+phecodes_count <- read.csv("../20250908_phenotypes_v2/phecodes_counts_by_indv.csv")
+
+phecodes_count <- phecodes_count[ , -1]
+
+```
+```{r}
+
+phecodes_total <- read.csv("../20250908_phenotypes_v2/phecodes_total.csv")
+
+```
+
+###############################################################################################
+# ancestry
+###############################################################################################
+
+```{r}
+
+id_table <- unique(manifest[,c("biosample_id", "pat_id")])
+
+```
+
+```{r}
+
+colnames(ancestry)[2] <- "biosample_id"
+
+```
+
+```{r}
+
+ancestry <- left_join(ancestry, id_table, by = "biosample_id")
+
+```
+
+```{r}
+
+anc_pat_id <- unique(ancestry[,c("ancestry", "pat_id")])
+
+anc_pat_id <- anc_pat_id[!is.na(anc_pat_id$pat_id), ]
+
+
+```
+
+```{r}
+
+my_colors <- c("EUR" =  "#6183C2",  "AMR" = "#F79661", "SAS" = "#815ac0", "EAS" ="gold2","AFR" = "#C46363", "Unclassified" = "#6d6875")
+
+anc_pat_id %>%
+  count(ancestry) %>%
+  ggplot(aes(x = "", y = n, fill = ancestry)) +
+  geom_col(width = 1) +
+  coord_polar(theta = "y") +
+  scale_fill_manual(values = my_colors) +
+  labs(title = "Arcus GIA") +
+  theme_void()
+
+```
+
+```{r}
+
+pie_data <- anc_pat_id %>%
+  count(ancestry) %>%
+  arrange(desc(ancestry)) %>%
+  mutate(
+    fraction = n / sum(n),
+    ymax = cumsum(fraction),
+    ymin = c(0, head(ymax, n = -1)),
+    label_angle = 360 * (ymin + fraction/2), # angle in degrees
+    label_y = 1.65 # just outside the pie
+  )
+
+# Plot
+ggplot(pie_data, aes(x = 1, y = fraction, fill = ancestry)) +
+  geom_col(color = "white", width = 1) +
+  coord_polar(theta = "y") +
+  scale_fill_manual(values = my_colors, name = "GIA") +
+  geom_text(aes(
+    x = label_y, 
+    y = ymin + fraction/2, 
+    label = n
+  ), inherit.aes = FALSE) +
+  labs(title = "Arcus GIA") +
+  theme_void()
+
+```
+
+```{r}
+
+jpeg("arcus_gia_pie.jpeg", width = 1200, height = 1200, res = 150)
+
+# Plot
+ggplot(pie_data, aes(x = 1, y = fraction, fill = ancestry)) +
+  geom_col(color = "white", width = 1) +
+  coord_polar(theta = "y") +
+  scale_fill_manual(values = my_colors, name = "GIA") +
+  geom_text(aes(
+    x = label_y, 
+    y = ymin + fraction/2, 
+    label = n
+  ), inherit.aes = FALSE) +
+  labs(title = "Arcus GIA") +
+  theme_void()
+
+dev.off()
+```
+
+
+```{r}
+
+# Open PDF device
+pdf("arcus_gia_pie.pdf", width = 6, height = 6)  # width/height in inches
+
+# Plot
+ggplot(pie_data, aes(x = 1, y = fraction, fill = ancestry)) +
+  geom_col(color = "white", width = 1) +
+  coord_polar(theta = "y") +
+  scale_fill_manual(values = my_colors, name = "GIA") +
+  geom_text(aes(
+    x = label_y, 
+    y = ymin + fraction/2, 
+    label = n
+  ), inherit.aes = FALSE) +
+  labs(title = "Arcus GIA") +
+  theme_void()
+
+# Close PDF device
+dev.off()
+
+
+```
+
+###############################################################################################
+# ancestry
+###############################################################################################
+
+```{r}
+
+encounter_df$age_years <- encounter_df$effective_age/365.25
+
+```
+
+```{r}
+
+encounter_plot_df <- encounter_df[encounter_df$effective_age >= 0,]
+
+encounter_plot_df <- left_join(encounter_plot_df, ancestry_df, by = "pat_id")
+
+```
+
+```{r}
+
+# Prepare the data
+encounter_plot_df <- encounter_plot_df %>%
+  group_by(pat_id) %>%               # group by patient
+  mutate(first_age = min(age_years)) %>%  # get first age per patient
+  ungroup() %>%
+  arrange(first_age) %>%             # sort by first age
+  mutate(order_id = row_number())    # assign y-axis order
+
+# Plot
+ggplot(encounter_plot_df, aes(x = age_years, y = order_id)) +
+  geom_point(color = "#2c7fb8", alpha = 0.05, size = 0.3) +
+  scale_y_continuous("Individual", breaks = NULL) +
+  scale_x_continuous("Age (years)") +
+  theme_minimal()
+
+```
+
+```{r}
+ancestry_colors <- c(
+  "EUR" = "#6183C2",
+  "AMR" = "#F79661",
+  "SAS" = "#815ac0",
+  "EAS" = "gold2",
+  "AFR" = "#C46363",
+  "Unclassified" = "#6d6875"
+)
+
+ggplot(encounter_plot_df, aes(x = age_years, y = order_id, color = ancestry)) +
+  geom_point(alpha = 0.05, size = 0.3) +
+  scale_color_manual(values = ancestry_colors, name = "Ancestry") +
+  scale_y_continuous("Individual", breaks = NULL) +
+  scale_x_continuous("Age (years)") +
+  theme_minimal()
+
+
+```
+
+
+```{r}
+
+
+pdf("arcus__diag_ages.pdf", width = 12, height = 6)  
+
+ggplot(encounter_plot_df, aes(x = age_years, y = order_id)) +
+  geom_point(color = "#2c7fb8", alpha = 0.05, size = 0.3) +
+  scale_y_continuous("Individual", breaks = NULL) +
+  scale_x_continuous("Age (years)") +
+  theme_minimal()
+
+dev.off()
+
+
+```
+
+```{r}
+
+jpeg("arcus_diag_ages.jpg", width=6, height=4, units="in", res=300)
+
+ggplot(encounter_plot_df, aes(x = age_years, y = order_id)) +
+  geom_point(color = "#2c7fb8", alpha = 0.05, size = 0.3) +
+  scale_y_continuous("Individual", breaks = NULL) +
+  scale_x_continuous("Age (years)") +
+  theme_minimal()
+
+dev.off()
+
+```
+
+###############################################################################################
+# diagnoses
+###############################################################################################
+
+# must have two or more instances of a diagnosis
+```{r change to binary}
+
+phecodes_binary <- phecodes_count
+
+
+phecodes_binary[, -1] <- ifelse(phecodes_count[, -1] >= 2, 1, 0)
+
+```
+
+```{r}
+
+phecodes_binary_2 <- phecodes_count
+phecodes_binary_2[,-1] <- ifelse(phecodes_count[,-1] >= 2, 1,
+                         ifelse(phecodes_count[,-1] == 1, NA, 0))
+
+
+```
+
+```{r}
+
+ancestry_check <- ancestry %>%
+  group_by(pat_id) %>%
+  summarise(
+    n_ancestries = n_distinct(ancestry),
+    ancestries   = paste(unique(ancestry), collapse = ", ")
+  )
+
+```
+
+```{r}
+
+ancestry_df <- unique(ancestry[,c("ancestry", "pat_id")])
+
+ancestry_df <- ancestry_df %>% filter(!is.na(pat_id))
+
+```
+
+```{r}
+
+phecodes_binary <- left_join(phecodes_binary, ancestry_df, by = "pat_id")
+
+```
+
+```{r}
+
+phecodes_binary_2 <- left_join(phecodes_binary_2, ancestry_df, by = "pat_id")
+
+```
+
+```{r}
+
+
+# Define function
+plot_prevalence_by_ancestry <- function(df, phecodes, ancestry_col = "ancestry",
+                                        plot_title = "Prevalence by Ancestry",
+                                        show_pct = TRUE, colors = NULL) {
+  
+  # Select relevant columns
+  df_sel <- df %>%
+    select(all_of(c(ancestry_col, phecodes)))
+  
+  # Pivot to long format
+  df_long <- df_sel %>%
+    pivot_longer(
+      cols = all_of(phecodes),
+      names_to = "phecode",
+      values_to = "case"
+    )
+  
+  # Count cases by ancestry x phecode
+  case_counts <- df_long %>%
+    filter(case == 1) %>%
+    group_by(phecode, !!sym(ancestry_col)) %>%
+    summarise(n = n(), .groups = "drop") %>%
+    group_by(phecode) %>%
+    mutate(total = sum(n),
+           pct = n / total * 100) %>%
+    ungroup()
+  
+  # Sort phecodes by total case count descending
+  case_counts$phecode <- factor(case_counts$phecode,
+                                 levels = case_counts %>%
+                                   group_by(phecode) %>%
+                                   summarise(total = sum(n)) %>%
+                                   arrange(desc(total)) %>%
+                                   pull(phecode))
+  
+  # Base plot
+  p <- ggplot(case_counts, aes(x = phecode, y = n, fill = !!sym(ancestry_col))) +
+    geom_col() +
+    scale_x_discrete(labels = function(x) sub("^X", "", x)) +
+    labs(title = plot_title, x = "Phenotype", y = "Number of Cases", fill = "GIA") +
+    theme_minimal(base_size = 14) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  
+  # Add percentages inside bars
+  if (show_pct) {
+    p <- p +
+      geom_text(aes(label = paste0(round(pct), "%")),
+                position = position_stack(vjust = 0.5),
+                color = "white", size = 3)
+  }
+  
+  # Set colors if provided
+  if (!is.null(colors)) {
+    p <- p + scale_fill_manual(values = colors)
+  }
+  
+  return(p)
+}
+
+
+```
+
+# I need to roll up phenotypes in the pheno table
+# these are just the root level phenotypes
+
+```{r}
+
+selected_phecodes <- c("X313.3", "X276.12", "X747.1", "X315.1", "X755.61", "X276.5", "X313.1", "X261.4")
+#"X557", "X282"
+ancestry_colors <- c("EUR" =  "#6183C2",  "AMR" = "#F79661", "SAS" = "#815ac0", "EAS" ="gold2","AFR" = "#C46363", "Unclassified" = "#6d6875")
+
+plot <- plot_prevalence_by_ancestry(
+  df = phecodes_binary[!is.na(phecodes_binary$ancestry),],
+  phecodes = selected_phecodes,
+  ancestry_col = "ancestry",
+  plot_title = "Phecode Cases",
+  show_pct = FALSE,
+  colors = ancestry_colors
+)
+
+plot
+
+
+```
+
+```{r}
+
+# Save as JPEG, specify size in inches
+jpeg(
+  filename = "gia_by_phecode_case.jpg",
+  width = 8,        # width in inches
+  height = 5,       # height in inches
+  units = "in",     # tells R that width/height are in inches
+  res = 300         # resolution in DPI (dots per inch)
+)
+
+# Your plot
+plot
+
+# Important: close the device to finalize the file
+dev.off()
+
+```
+
+
+```{r}
+
+ids_282 <- phecodes_binary[phecodes_binary$"X282" == 1, ]$pat_id
+
+ids_282_anc <- ancestry_df[ancestry_df$pat_id %in% ids_282, ]
+
+table(ids_282_anc$ancestry)
+
+```
+
+
+###############################################################################################
+# Age of first diagnosis
+###############################################################################################
+
+```{r}
+
+min_age_df <- encounter_df %>%
+  filter(effective_age >= 0) %>%      # only non-negative ages
+  group_by(pat_id) %>%
+  summarise(min_effective_age = min(effective_age, na.rm = TRUE)) %>%
+  ungroup()
+
+```
+
+```{r}
+
+min_age_df$m_6 <- min_age_df$min_effective_age + (365 / 2)
+
+```
+
+###############################################################################################
+# diagnoses by ancestry
+###############################################################################################
+
+```{r}
+
+phecodes_eur <- phecodes_binary[phecodes_binary$pat_id %in% ancestry_df[ancestry_df$ancestry == "EUR",]$pat_id,]
+
+```
+
+```{r}
+
+phecodes_afr <- phecodes_binary[phecodes_binary$pat_id %in% ancestry_df[ancestry_df$ancestry == "AFR",]$pat_id,]
+
+```
+
+```{r}
+
+# Select columns starting with "X"
+x_cols_eur <- grep("^X", colnames(phecodes_eur), value = TRUE)
+
+# Compute column sums, ignoring NAs
+col_sums_eur <- colSums(phecodes_eur[, x_cols_eur], na.rm = TRUE)
+
+# Convert to a data frame
+df_sums_eur <- data.frame(
+  phecode = names(col_sums_eur),
+  case_count = col_sums_eur,
+  row.names = NULL
+)
+
+```
+
+```{r}
+
+# Select columns starting with "X"
+x_cols_afr <- grep("^X", colnames(phecodes_afr), value = TRUE)
+
+# Compute column sums, ignoring NAs
+col_sums_afr <- colSums(phecodes_afr[, x_cols_afr], na.rm = TRUE)
+
+# Convert to a data frame
+df_sums_afr <- data.frame(
+  phecode = names(col_sums_afr),
+  case_count = col_sums_afr,
+  row.names = NULL
+)
+
+```
+
+###############################################################################################
+# heatmap
+###############################################################################################
+
+```{r}
+
+phecodes_of_interest <- c("X313.3", "X276.12", "X747.1", "X315.1", "X755.61", "X276.5", "X313.1", "X261.4")
+
+prev_df <- phecodes_binary_2[!is.na(phecodes_binary_2$ancestry),] %>%
+  select(pat_id, ancestry, all_of(phecodes_of_interest)) %>%
+  pivot_longer(
+    cols = starts_with("X"),
+    names_to = "phecode",
+    values_to = "case"
+  ) %>%
+  filter(!is.na(case)) %>%                 # ignore NA rows
+  group_by(ancestry, phecode) %>%
+  summarise(
+    cases = sum(case == 1),
+    denom = sum(case %in% c(0, 1)),         # 0 + 1 only
+    prevalence = cases / denom,
+    .groups = "drop"
+  )
+
+
+```
+
+```{r}
+
+prev_df <- prev_df %>%
+  mutate(
+    phecode_label = sub("^X", "", phecode),
+    ancestry = factor(ancestry)
+  )
+
+
+```
+
+```{r}
+
+ggplot(prev_df, aes(x = phecode_label, y = ancestry, fill = prevalence)) +
+  geom_tile(color = "white") +
+  scale_fill_viridis_c(
+    name = "Prevalence",
+    labels = scales::percent_format(accuracy = 0.1)
+  ) +
+  labs(
+    x = "Phecode",
+    y = "GIA",
+    title = "Disease Prevalence by GIA"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+
+```
+
+```{r}
+
+jpeg("prevalence_by_gia.jpg", width=8, height=4, units="in", res=300)
+
+ggplot(prev_df, aes(x = phecode_label, y = ancestry, fill = prevalence)) +
+  geom_tile(color = "white") +
+  scale_fill_viridis_c(
+    name = "Prevalence",
+    labels = scales::percent_format(accuracy = 0.1)
+  ) +
+  labs(
+    x = "Phecode",
+    y = "GIA",
+    title = "Disease Prevalence by GIA"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+dev.off()
+
+```
+
+```{r}
+
+phecode_info_table <- phecodes_total[phecodes_total$Phecode %in% c("313.3", "276.12", "747.1", "315.1", "755.61", "276.5", "313.1", "261.4"),]
+
+phecode_info_table <- unique(phecode_info_table[,c("Phecode", "PhecodeString")])
+
+```
+
+```{r}
+
+write_csv(phecode_info_table, "phecode_info_table.csv")
+
+```

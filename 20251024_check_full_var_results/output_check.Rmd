@@ -1,0 +1,104 @@
+---
+title: "Check output from full var run"
+output: html_document
+date: "2025-10-24"
+---
+
+###############################################################################################
+# library
+###############################################################################################
+
+```{r packages}
+
+library(tidyverse)
+library(dplyr)
+library(data.table)
+library(ggplot2)
+library(qqman)
+library(PheWAS)
+
+```
+
+###############################################################################################
+# read in data
+###############################################################################################
+
+```{r}
+
+phe_345.3 <- read.table("/mnt/arcus/lab/users/flynncarra/projects/20251023_SAIGE_eur_total_var/results/phe_345.3_allchr.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+```
+
+```{r}
+
+phe_359.2 <- read.table("/mnt/arcus/lab/users/flynncarra/projects/20251023_SAIGE_eur_total_var/results/phe_359.2_allchr.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+```
+
+```{r}
+
+phe_345.3_man <- manhattan(phe_345.3,
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerID",
+          p = "p.value",
+          main = "Manhattan Plot: EUR ASD (313.3)",
+          ylim = c(0, max(-log10(phe_345.3$p.value)) + 1))
+
+
+```
+
+###############################################################################################
+# compare pheno lists
+###############################################################################################
+# there are NA's in the columns -- check on next iteration
+```{r}
+
+pheno_1 <- read.delim("/mnt/arcus/lab/users/flynncarra/projects/20251008_phewas_saige_pheno/array_eur_total_phe_200.tsv")
+
+colsums1 <- colSums(pheno_1[, !colnames(pheno_1) %in% c("ancestry", "pat_id", "biosample_id")], na.rm = T)
+```
+
+```{r}
+
+pheno_2 <- read.delim("/mnt/arcus/lab/users/flynncarra/projects/20251008_phewas_saige_pheno/array_eur_total_phe_200_ru.tsv")
+
+colsums2 <- colSums(pheno_2[, !colnames(pheno_2) %in% c("ancestry", "pat_id", "biosample_id")], na.rm = T)
+```
+
+```{r}
+diffs <- colsums1 != colsums2
+
+```
+
+```{r}
+
+# Select columns that start with "phe_"
+phe_cols_df1 <- grep("^phe_", colnames(pheno_1), value = TRUE)
+phe_cols_df2 <- grep("^phe_", colnames(pheno_2), value = TRUE)
+
+# Make sure we only compare columns that exist in BOTH data frames
+common_cols <- intersect(phe_cols_df1, phe_cols_df2)
+
+# Compute column sums
+s1 <- colSums(pheno_1[, common_cols], na.rm = TRUE)
+s2 <- colSums(pheno_2[, common_cols], na.rm = TRUE)
+
+# Combine into one data frame
+comparison <- data.frame(
+  column = common_cols,
+  df1_sum = s1[common_cols],
+  df2_sum = s2[common_cols],
+  different = s1[common_cols] != s2[common_cols]
+)
+
+comparison
+
+
+```
+
+```{r}
+
+table(comparison$different)
+
+```

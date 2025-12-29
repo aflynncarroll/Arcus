@@ -1,0 +1,1045 @@
+---
+title: "Phenotype counts for Arcus"
+output: html_document
+date: "2025-08-01"
+---
+
+###############################################################################################
+# library
+###############################################################################################
+
+```{r}
+
+library(bigrquery)
+library(tidyverse)
+library(dplyr)
+library(icd)
+# icd conversions
+library(icd.data)
+# icd conversions and lookup
+
+library(devtools)
+library(PheWAS)
+
+library(pheatmap)
+
+
+```
+
+```{r}
+
+#devtools::install_github("PheWAS/PheWAS")
+
+```
+
+
+###############################################################################################
+# read in data
+###############################################################################################
+
+```{r}
+
+phecode_map <- read.csv("Phecode_map_v1_2_icd9_icd10cm.csv")
+
+```
+
+```{r get project id}
+
+bq_auth()
+project_id <- bq_projects()[1]
+
+```
+
+```{r note }
+
+query_note <- "
+SELECT
+    *
+FROM
+  arcus.note_concat
+"
+note_df <- bq_project_query(project_id, query_note) %>%
+  bq_table_download(bigint = "integer64") %>%
+  as_tibble()
+head(note_df)
+
+```
+
+```{r encounter }
+
+query_encounter_diagnosis <- "
+SELECT
+  encounter_id,
+  pat_id,
+  effective_age
+FROM
+  arcus.encounter
+"
+encounter_df <- bq_project_query(project_id, query_encounter_diagnosis) %>%
+  bq_table_download(bigint = "integer64") %>%
+  as_tibble()
+head(encounter_df)
+
+```
+
+```{r encounter diagnosis}
+
+query_encounter_diagnosis <- "
+SELECT
+  *
+FROM
+  arcus.encounter_diagnosis
+"
+encounter_diagnosis_df <- bq_project_query(project_id, query_encounter_diagnosis) %>%
+  bq_table_download(bigint = "integer64") %>%
+  as_tibble()
+head(encounter_diagnosis_df)
+
+```
+
+```{r encounter information icd 9}
+
+query_diag_icd9 <- "
+SELECT
+  *
+FROM
+  arcus.diagnosis_icd9
+"
+diag_icd9_df <- bq_project_query(project_id, query_diag_icd9) %>%
+  bq_table_download(bigint = "integer64") %>%
+  as_tibble()
+head(diag_icd9_df)
+
+```
+
+```{r encounter information icd 10}
+
+query_diag_icd10 <- "
+SELECT
+  *
+FROM
+  arcus.diagnosis_icd10
+"
+diag_icd10_df <- bq_project_query(project_id, query_diag_icd10) %>%
+  bq_table_download(bigint = "integer64") %>%
+  as_tibble()
+head(diag_icd10_df)
+
+```
+
+```{r master diagnosis}
+
+query_master_diagnosis <- "
+SELECT
+  *
+FROM
+  arcus.master_diagnosis
+"
+master_diagnosis <- bq_project_query(project_id, query_master_diagnosis) %>%
+  bq_table_download(bigint = "integer64") %>%
+  as_tibble()
+
+
+```
+
+###############################################################################################
+# find diagnosis instances
+###############################################################################################
+
+```{r find }
+
+diag_icd9_unq <- diag_icd9_df[!(diag_icd9_df$dx_id %in% diag_icd10_df$dx_id), ]
+
+```
+
+###############################################################################################
+# icd9 and icd10 overlap
+###############################################################################################
+
+```{r}
+
+shared_icd_dx <- intersect(unique(diag_icd9_df$dx_id), unique(diag_icd10_df$dx_id))
+
+```
+
+with shared dx_id, the diagnoses are the same
+
+```{r}
+
+diag_icd9_df[diag_icd9_df$dx_id == "813074551207619",]
+
+
+```
+
+```{r}
+
+diag_icd10_df[diag_icd10_df$dx_id == "813074551207619",]
+
+
+```
+
+###############################################################################################
+# add icd9 codes that are unique
+###############################################################################################
+
+```{r unique icd9 dx}
+
+# Codes in ICD9 but not in ICD10
+unq_icd9_dx <- setdiff(diag_icd9_df$dx_id, diag_icd10_df$dx_id)
+
+```
+
+```{r subset diagnoses to unique icd9}
+
+unq_icd9 <- diag_icd9_df[diag_icd9_df$dx_id %in% unq_icd9_dx, ]
+
+```
+
+```{r}
+
+diag_icd9_phe <- unq_icd9[,c("dx_id", "line", "code")]
+
+colnames(diag_icd9_phe) <- c("dx_id", "line", "ICD")
+
+```
+
+```{r}
+
+diag_icd9_phe <- left_join(diag_icd9_phe, phecode_map[phecode_map$Flag == 9,], by = "ICD")
+
+```
+
+```{r unique icd9 encounter}
+
+encounter_comb_icd9_unq <- left_join(encounter_diagnosis_df[,c("encounter_id", "dx_id")], encounter_df, by = "encounter_id")
+
+encounter_comb_icd9_unq <- left_join(encounter_comb_icd9_unq, diag_icd9_phe, by = "dx_id")
+
+encounter_comb_icd9_unq <- encounter_comb_icd9_unq[encounter_comb_icd9_unq$dx_id %in% unq_icd9_dx,]
+
+```
+
+```{r}
+
+dim(encounter_comb_icd9_unq)
+
+```
+60430
+
+```{r}
+
+encounter_comb_icd9_unq <- encounter_comb_icd9_unq[!is.na(encounter_comb_icd9_unq$Phecode),]
+
+dim(encounter_comb_icd9_unq)
+
+```
+50266
+
+###############################################################################################
+# investigate duplicates
+###############################################################################################
+
+```{r}
+
+dup_icd10 <- as.data.frame(table(diag_icd10_df$dx_id))
+
+dup_icd10_enc <- dup_icd10[dup_icd10$Var1 %in% encounter_diagnosis_df$dx_id,]
+
+```
+
+###############################################################################################
+# join icd10 tables
+###############################################################################################
+
+```{r}
+
+total_10_diag <- left_join(encounter_diagnosis_df, diag_icd10_df, by = "dx_id", multiple = "all")
+
+```
+
+```{r round codes to higher level}
+
+total_10_diag$code_top <- sub("\\..*", "", total_10_diag$code)
+
+```
+
+```{r icd10 counts by code}
+
+icd10_count <- total_10_diag|>
+  select(pat_id, code)|>
+  unique()|>
+  count(code)|>
+  arrange(desc(n))
+
+```
+
+```{r}
+
+icd10_count_top <- total_10_diag|>
+  select(pat_id, code_top)|>
+  unique()|>
+  count(code_top)|>
+  arrange(desc(n))
+
+```
+
+```{r}
+
+unique_10_diag <- unique(total_10_diag[,c("pat_id","code_top")])
+
+```
+
+```{r}
+
+icd10_top_binary <- unique_10_diag %>%
+  pivot_wider(
+    id_cols = pat_id,
+    names_from = code_top,
+    values_from = code_top,          # we just need something to count
+    values_fn = length,              # count entries
+    values_fill = 0                  # fill missing with 0
+  )
+
+
+```
+
+```{r}
+
+write.csv(icd10_top_binary, "icd10_top_binary.csv")
+
+```
+
+###############################################################################################
+# join icd9 tables
+###############################################################################################
+
+```{r}
+
+total_9_diag <- left_join(encounter_diagnosis_df, diag_icd9_df, by = "dx_id", multiple = "all")
+
+```
+
+```{r round codes to higher level}
+
+total_9_diag$code_top <- sub("\\..*", "", total_9_diag$code)
+
+```
+
+```{r icd10 counts by code}
+
+icd9_count <- total_9_diag|>
+  select(pat_id, code)|>
+  unique()|>
+  count(code)|>
+  arrange(desc(n))
+
+```
+
+```{r}
+
+icd9_count_top <- total_9_diag|>
+  select(pat_id, code_top)|>
+  unique()|>
+  count(code_top)|>
+  arrange(desc(n))
+
+```
+
+###############################################################################################
+# round to the whole numbers for icd10
+###############################################################################################
+
+```{r}
+
+diag_icd10_df$code_top <- sub("\\..*", "", diag_icd10_df$code)
+
+diag_icd10_df_top <- unique(diag_icd10_df[, c("dx_id", "code_top")])
+
+table_icd10_dx <- table(diag_icd10_df_top$dx_id)
+
+sum(table_icd10_dx > 1)
+
+```
+
+```{r}
+
+table_icd10_dx_in_data <- table_icd10_dx[names(table_icd10_dx) %in% encounter_diagnosis_df$dx_id]
+
+sum(table_icd10_dx_in_data > 1)
+
+```
+
+###############################################################################################
+# icd10 counts
+###############################################################################################
+
+```{r}
+
+icd10_codes <- icd10_count$code  
+
+icd10_desc <- icd::explain_table(icd10_codes, short_code = FALSE)
+
+```
+
+```{r}
+
+colnames(icd10_count) <- c("code", "count")
+
+icd10_desc$code <- as.character(icd10_count$code)
+
+icd10_count <- left_join(icd10_count, icd10_desc[, c("code", "short_desc")], by = "code")
+
+icd10_count <- icd10_count %>%
+  filter(!is.na(code))
+
+```
+# 199 out of 1513 have 1000 or more
+
+```{r}
+
+write.csv(icd10_count_top, "3_digit_icd10_counts.csv")
+
+```
+
+###############################################################################################
+# 3 code level for icd10 counts
+###############################################################################################
+
+```{r}
+
+icd10_top_codes <- icd10_count_top$code_top  # autism, anxiety, epilepsy
+
+icd10_top_desc <- icd::explain_table(icd10_top_codes, short_code = FALSE)
+
+```
+
+```{r}
+
+colnames(icd10_count_top) <- c("code", "count")
+
+icd10_top_desc$code <- as.character(icd10_top_desc$code)
+
+icd10_count_top <- left_join(icd10_count_top, icd10_top_desc[, c("code", "short_desc")], by = "code")
+
+icd10_count_top <- icd10_count_top %>%
+  filter(!is.na(code))
+
+```
+# 199 out of 1513 have 1000 or more
+
+```{r}
+
+write.csv(icd10_count_top, "3_digit_icd10_counts.csv")
+
+```
+
+###############################################################################################
+# asd from icd10
+###############################################################################################
+
+```{r}
+
+asd_icd10 <- total_10_diag[total_10_diag$code == "F84.0"& !is.na(total_10_diag$code),]
+
+```
+
+```{r}
+
+asd_indv <- unique(asd_icd10$pat_id)
+
+```
+
+###############################################################################################
+# find icd10 enriched in asd
+###############################################################################################
+
+```{r subset to unique 3 digit icd10s }
+
+icd10_t3 <- unique(diag_icd10_df[,c("dx_id", "code_top")])
+
+dim(icd10_t3)
+
+```
+
+```{r encounter pat_id map}
+
+encounter_pat_ids <- unique(encounter_diagnosis_df[,c("pat_id", "dx_id")])
+
+dim(encounter_pat_ids)
+
+```
+
+```{r}
+
+icd10_t3 <- left_join(icd10_t3, encounter_pat_ids, by = "dx_id")
+
+dim(icd10_t3)
+
+```
+
+```{r}
+
+icd10_t3 <- icd10_t3[complete.cases(icd10_t3), ]
+
+dim(icd10_t3)
+
+```
+
+```{r}
+
+icd10_t3 <- unique(icd10_t3[,c("code_top", "pat_id")])
+
+dim(icd10_t3)
+
+```
+
+```{r}
+
+# Make a flag for ASD status
+icd10_t3 <- icd10_t3 %>%
+  mutate(ASD_status = ifelse(pat_id %in% asd_indv, 1, 0))
+
+# Get list of unique ICD codes
+#codes <- unique(icd10_t3$code_top)
+
+codes <- as.list(unique(icd10_count_top[icd10_count_top$n >= 1000,"code_top"]))
+
+codes <- codes$code_top
+codes <- codes[!is.na(codes)]
+
+```
+
+```{r}
+# Initialize results data frame
+results <- data.frame(
+  code_top = character(),
+  ASD_with_code = integer(),
+  ASD_without_code = integer(),
+  nonASD_with_code = integer(),
+  nonASD_without_code = integer(),
+  p_value = numeric(),
+  stringsAsFactors = FALSE
+)
+
+for (code in codes) {
+  
+  # Get patient-level presence for this code
+  pats_with_code <- icd10_t3 %>%
+    filter(code_top == code) %>%
+    pull(pat_id) %>%
+    unique()
+  
+  # 2x2 counts
+  a <- sum(asd_indv %in% pats_with_code)  # ASD + code
+  b <- sum(asd_indv %in% setdiff(unique(icd10_t3$pat_id), pats_with_code))  # ASD + no code
+  
+  non_asd <- setdiff(unique(icd10_t3$pat_id), asd_indv)
+  c <- sum(non_asd %in% pats_with_code)   # non-ASD + code
+  d <- sum(non_asd %in% setdiff(unique(icd10_t3$pat_id), pats_with_code))   # non-ASD + no code
+  
+  tbl <- matrix(c(a, b, c, d), nrow = 2, byrow = TRUE)
+  
+  # Chi-squared test
+  test <- chisq.test(tbl)
+  
+  results <- rbind(results, data.frame(
+    code_top = code,
+    ASD_with_code = a,
+    ASD_without_code = b,
+    nonASD_with_code = c,
+    nonASD_without_code = d,
+    p_value = test$p.value,
+    stringsAsFactors = FALSE
+  ))
+}
+
+
+
+```
+
+```{r}
+
+colnames(results)[1] <- "code"
+
+results <- left_join(results, icd10_top_desc[, c("code", "short_desc")], by = "code")
+
+```
+
+```{r}
+
+write.csv(results, "icd10_3d_asd_enrichment.csv")
+
+```
+
+###############################################################################################
+# phecodes
+###############################################################################################
+
+map from: https://phewascatalog.org/phewas/#phe12
+Phecode 1.2 map of both ICD-9 and -10 Clinical modification (CM)
+
+```{r}
+
+diag_icd10_df$icd10_one_dec <- sub("^([^.]+\\.[0-9]).*$", "\\1", diag_icd10_df$code)
+
+```
+
+```{r}
+
+unique_icd10 <- unique(diag_icd10_df$icd10_one_dec)
+
+# Load ICD-10 to Phecode map
+data(phecode_map_icd10)
+names(phecode_map_icd10)[names(phecode_map_icd10) == "code"] <- "icd10"
+
+```
+
+```{r}
+
+# Join with phecode mapping
+icd10_map <- merge(
+  data.frame(icd10 = unique_icd10),
+  phecode_map_icd10,
+  by = "icd10",
+  all.x = TRUE
+)[, c("icd10", "phecode")]  # Keep only the two columns you want
+
+
+```
+
+```{r}
+
+diag_icd10_phe <- diag_icd10_df[,c("dx_id", "line", "code")]
+
+colnames(diag_icd10_phe) <- c("dx_id", "line", "ICD")
+
+```
+
+```{r}
+
+diag_icd10_phe <- left_join(diag_icd10_phe, phecode_map[phecode_map$Flag == 10,], by = "ICD")
+
+```
+
+```{r see how many entries are NA}
+
+table(is.na(diag_icd10_phe$Phecode))
+
+136382/1531993
+```
+
+FALSE    TRUE 
+1531993  136382
+
+0.0890226
+~ 9%
+
+###############################################################################################
+# combine icd10 dfs
+###############################################################################################
+
+encounter_df
+encounter_diagnosis_df
+
+```{r}
+
+encounter_comb_icd10 <- left_join(encounter_diagnosis_df[,c("encounter_id", "dx_id")], encounter_df, by = "encounter_id")
+
+encounter_comb_icd10 <- left_join(encounter_comb_icd10, diag_icd10_phe, by = "dx_id")
+
+```
+
+```{r}
+
+write.csv(encounter_comb_icd10, "total_icd10_phecode_encounter.csv")
+
+```
+
+```{r}
+
+encounter_comb_icd10 <- read.csv("total_icd10_phecode_encounter.csv")
+
+```
+
+###############################################################################################
+# unique individual diagnoses
+###############################################################################################
+
+```{r}
+
+unq_10_phe <- unique(encounter_comb_icd10[,c("pat_id", "Phecode","PhecodeString", "PhecodeCategory")])
+
+unq_10_phe <- unq_10_phe[!is.na(unq_10_phe$Phecode),]
+
+```
+
+```{r}
+
+length(unique(unq_10_phe$pat_id))
+
+```
+
+# 20480
+individual count
+
+icd10 to phecode counts
+
+```{r top level phecodes}
+
+unq_10_phe$top_phe <- sub("\\..*", "", unq_10_phe$Phecode)
+
+```
+
+```{r}
+
+icd10_phe_counts <- as.data.frame(table(unq_10_phe$Phecode))
+
+icd10_top_phe_counts <- as.data.frame(table(unq_10_phe$top_phe))
+
+```
+
+
+```{r}
+
+phe_icd10_top_binary <- unq_10_phe %>%
+  pivot_wider(
+    id_cols = pat_id,
+    names_from = Phecode,
+    values_from = Phecode,          
+    values_fn = length,              
+    values_fill = 0                  
+  )
+
+
+```
+
+```{r}
+
+phe_icd10_cols <- colnames(phe_icd10_top_binary)
+
+heatmap_phe10_mat <- as.matrix(phe_icd10_top_binary[, setdiff(phe_icd10_cols, "pat_id")])
+
+```
+
+```{r}
+
+heatmap_phe10 <- pheatmap(
+  heatmap_phe10_mat,
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  color = c("white", "blue"),
+  main = "Phecodes from ICD-10 Binary Heatmap"
+)
+
+```
+
+###############################################################################################
+# combine icd9 and icd10
+###############################################################################################
+
+```{r}
+
+encounter_comb_icd10 <- encounter_comb_icd10 %>% select(-X)
+
+```
+
+```{r}
+
+encounter_comb_icd <- rbind(encounter_comb_icd10, encounter_comb_icd9_unq)
+
+encounter_comb_icd <- encounter_comb_icd[!is.na(encounter_comb_icd$Phecode),]
+
+```
+
+```{r}
+
+encounter_comb_icd$top_icd <- sub("\\..*", "", encounter_comb_icd$ICD)
+
+```
+
+
+```{r}
+
+write.csv(encounter_comb_icd, "phecode_comb_icd.csv")
+
+```
+
+
+```{r}
+
+encounter_comb_icd_unq <- unique(encounter_comb_icd[, c("pat_id", "Phecode", "PhecodeString", "PhecodeCategory")])
+
+```
+
+```{r top level phecodes}
+
+encounter_comb_icd_unq$top_phe <- sub("\\..*", "", encounter_comb_icd_unq$Phecode)
+
+```
+
+###############################################################################################
+# find phenotype counts by diagnoses for icd10
+###############################################################################################
+
+```{r phecode icd10 counts}
+
+# Example thresholds
+thresholds <- c(100, 250, 500, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000)
+
+# Count number of Var1 entries with Freq >= each threshold
+counts <- sapply(thresholds, function(thresh) {
+  sum(icd10_phe_counts$Freq >= thresh)
+})
+
+# Combine into a data.frame for easy viewing
+threshold_counts <- data.frame(
+  threshold = thresholds,
+  n_vars = counts
+)
+
+threshold_counts
+
+
+```
+
+```{r top phecode icd10 counts}
+
+# Example thresholds
+thresholds_top <- c(100, 250, 500, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000)
+
+# Count number of Var1 entries with Freq >= each threshold
+counts_top <- sapply(thresholds_top, function(thresh) {
+  sum(icd10_top_phe_counts$Freq >= thresh)
+})
+
+# Combine into a data.frame for easy viewing
+threshold_counts_top <- data.frame(
+  threshold = thresholds_top,
+  n_vars = counts_top
+)
+
+threshold_counts_top
+
+
+```
+
+```{r}
+
+icd10_phe_plot_top <- ggplot(threshold_counts_top, aes(x = factor(threshold), y = n_vars)) +
+  geom_col(fill = "steelblue") +
+  geom_text(aes(label = n_vars), vjust = -0.5, size = 5) +
+  labs(
+    x = "Diagnosis threshold",
+    y = "Number of phecodes",
+    title = "Root Phecodes by frequency thresholds"
+  ) +
+  expand_limits(y = max(threshold_counts_top$n_vars) * 1.1) +  # add some headroom
+  theme_minimal(base_size = 14)
+
+icd10_phe_plot_top
+
+```
+
+```{r}
+
+icd10_phe_plot <- ggplot(threshold_counts, aes(x = factor(threshold), y = n_vars)) +
+  geom_col(fill = "steelblue") +
+  geom_text(aes(label = n_vars), vjust = -0.5, size = 5) +
+  labs(
+    x = "Diagnosis threshold",
+    y = "Number of phecodes",
+    title = "Phecodes by frequency thresholds"
+  ) +
+  expand_limits(y = max(threshold_counts$n_vars) * 1.1) +  # add some headroom
+  theme_minimal(base_size = 14)
+
+icd10_phe_plot
+
+```
+
+```{r}
+
+ggsave("ICD10_root_phecode_cutoff.pdf", plot = icd10_phe_plot_top, width = 6, height = 4)
+
+```
+
+```{r}
+
+ggsave("ICD10_phecode_cutoff.pdf", plot = icd10_phe_plot, width = 6, height = 4)
+
+```
+
+###############################################################################################
+# find phenotype counts by diagnoses for icd10 and icd9
+###############################################################################################
+
+```{r}
+
+icd_phe_counts <- as.data.frame(table(encounter_comb_icd_unq$Phecode))
+
+icd_top_phe_counts <- as.data.frame(table(encounter_comb_icd_unq$top_phe))
+
+```
+
+
+```{r phecode icd10 counts}
+
+# Example thresholds
+thresholds <- c(100, 250, 500, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000)
+
+# Count number of Var1 entries with Freq >= each threshold
+counts_comb <- sapply(thresholds, function(thresh) {
+  sum(icd_phe_counts$Freq >= thresh)
+})
+
+# Combine into a data.frame for easy viewing
+threshold_counts_comb <- data.frame(
+  threshold = thresholds,
+  n_vars = counts_comb
+)
+
+threshold_counts_comb
+
+
+```
+
+```{r top phecode icd10 counts}
+
+# Example thresholds
+thresholds_top <- c(100, 250, 500, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000)
+
+# Count number of Var1 entries with Freq >= each threshold
+counts_top_comb <- sapply(thresholds_top, function(thresh) {
+  sum(icd_top_phe_counts$Freq >= thresh)
+})
+
+# Combine into a data.frame for easy viewing
+threshold_counts_top_comb <- data.frame(
+  threshold = thresholds_top,
+  n_vars = counts_top_comb
+)
+
+threshold_counts_top_comb
+
+
+```
+
+```{r}
+
+phe_plot_top <- ggplot(threshold_counts_top_comb, aes(x = factor(threshold), y = n_vars)) +
+  geom_col(fill = "steelblue") +
+  geom_text(aes(label = n_vars), vjust = -0.5, size = 5) +
+  labs(
+    x = "Diagnosis threshold",
+    y = "Number of phecodes",
+    title = "Total root Phecodes by frequency thresholds"
+  ) +
+  expand_limits(y = max(threshold_counts_top_comb$n_vars) * 1.1) +  # add some headroom
+  theme_minimal(base_size = 14)
+
+phe_plot_top
+
+```
+
+```{r}
+
+phe_plot <- ggplot(threshold_counts_comb, aes(x = factor(threshold), y = n_vars)) +
+  geom_col(fill = "steelblue") +
+  geom_text(aes(label = n_vars), vjust = -0.5, size = 5) +
+  labs(
+    x = "Diagnosis threshold",
+    y = "Number of phecodes",
+    title = "Total Phecodes by frequency thresholds"
+  ) +
+  expand_limits(y = max(threshold_counts_comb$n_vars) * 1.1) +  # add some headroom
+  theme_minimal(base_size = 14)
+
+phe_plot
+
+```
+
+```{r}
+
+ggsave("Total_root_phecode_cutoff.pdf", plot = phe_plot_top, width = 6, height = 4)
+
+```
+
+```{r}
+
+ggsave("Total_phecode_cutoff.pdf", plot = phe_plot, width = 6, height = 4)
+
+```
+
+###############################################################################################
+# diagnosis age
+###############################################################################################
+
+```{r}
+
+age_plot <- encounter_comb_icd %>%
+  filter(!is.na(effective_age)) %>%           # remove NAs
+  ggplot(aes(x = effective_age, fill = PhecodeCategory)) +
+  geom_histogram(binwidth = 1, position = "dodge") +
+  labs(
+    title = "Age Distribution of Diagnoses",
+    x = "Age at Diagnosis",
+    y = "Frequency"
+  ) +
+  theme_minimal(base_size = 14)
+
+
+
+```
+
+###############################################################################################
+# plotting heatmaps
+###############################################################################################
+
+```{r jingjing's original code}
+
+
+mat <- patient_form_stats %>%
+  select(pat_id, form_name, missing_rate) %>%
+  pivot_wider(names_from = pat_id, values_from = missing_rate, values_fill = 1) %>%
+  as.data.frame()
+
+rownames(mat) <- mat$form_name
+mat$form_name <- NULL
+
+```
+
+```{r}
+
+icd10_count_top_1k <- icd10_count_top[icd10_count_top$n >= 1000,]
+
+icd10_count_top_1k <- icd10_count_top_1k[!is.na(icd10_count_top_1k$code_top),]
+
+```
+
+```{r}
+
+icd10_top_binary <- read.csv("icd10_top_binary.csv")
+
+```
+
+```{r}
+
+cols_to_keep <- c("pat_id", icd10_count_top_1k$code_top)
+
+# Remove pat_id column for the heatmap
+heatmap_mat <- as.matrix(icd10_top_binary[, setdiff(cols_to_keep, "pat_id")])
+
+```
+
+```{r}
+
+pheatmap(
+  heatmap_mat,
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  color = c("white", "red"),
+  main = "ICD-10 Binary Heatmap"
+)
+
+
+```

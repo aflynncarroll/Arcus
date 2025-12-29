@@ -1,0 +1,56 @@
+---
+title: "t50 phewas results"
+output: html_document
+date: "2025-10-20"
+---
+
+###############################################################################################
+# library
+###############################################################################################
+
+```{r packages}
+
+library(tidyverse)
+library(dplyr)
+library(data.table)
+library(ggplot2)
+library(qqman)
+
+
+
+```
+
+###############################################################################################
+# read in data
+###############################################################################################
+
+
+```{r}
+
+t50_res <- read.table("../20251016_SAIGE_t50_test/results/phe_1002_allchr.txt", sep = "\t", header = T)
+
+```
+
+```{r}
+
+# 1. List all files ending with "allchr.txt" in a folder
+file_list <- list.files(path = "../20251016_SAIGE_t50_test/results/", pattern = "allchr\\.txt$", full.names = TRUE)
+
+# 2. Read each file into a list of data frames
+df_list <- lapply(file_list, function(f) {
+  df <- read.table(f, header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+  df$source_file <- basename(f)
+  df
+})
+
+# 3. Combine all data frames into one
+t50_res <- do.call(rbind, df_list)
+
+
+```
+
+```{r}
+
+t50_sig <- t50_res[t50_res$p.value <= 5e-8,]
+
+```

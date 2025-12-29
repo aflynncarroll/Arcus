@@ -1,0 +1,281 @@
+---
+title: "Plot Phecode data"
+output: html_document
+date: "2025-08-28"
+---
+
+```{r}
+
+library(bigrquery)
+library(tidyverse)
+library(dplyr)
+library(devtools)
+
+```
+
+###############################################################################################
+# read in data
+###############################################################################################
+
+```{r get project id}
+
+bq_auth()
+project_id <- bq_projects()[1]
+
+```
+
+```{r}
+
+phecode_map <- read.csv("../20250801_arcus_phenotype_counts/Phecode_map_v1_2_icd9_icd10cm.csv")
+
+```
+
+```{r}
+
+encounter_comb_icd <- read.csv("../20250801_arcus_phenotype_counts/phecode_comb_icd.csv")
+
+```
+
+```{r pat sex }
+
+query_pat_sex <- "
+SELECT
+  pat_id,
+  sex
+FROM
+  arcus.patient
+"
+pat_df <- bq_project_query(project_id, query_pat_sex) %>%
+  bq_table_download(bigint = "integer64") %>%
+  as_tibble()
+head(pat_df)
+
+```
+
+###############################################################################################
+# asd exploration
+###############################################################################################
+
+```{r}
+
+encounter_comb_icd %>%
+  filter(grepl("^F84", ICD)) %>%       # keep only rows where ICD starts with F84
+  summarise(n_patients = n_distinct(pat_id))
+
+```
+```{r table asd icds}
+
+asd_icds <- encounter_comb_icd %>%
+  filter(grepl("^F84", ICD)) %>%           # keep only F84 codes
+  group_by(ICD) %>%                        # group by each code
+  summarise(n_patients = n_distinct(pat_id)) %>%  # count unique patients per code
+  arrange(desc(n_patients))
+
+asd_icds
+
+```
+```{r}
+
+asd_icds <- left_join(asd_icds, unique(encounter_comb_icd[,c("ICD", "ICDString", "Phecode", "PhecodeString", "PhecodeCategory")]), by = "ICD")
+
+```
+
+```{r}
+
+f84_df <- encounter_comb_icd[grepl("^F84\\.", encounter_comb_icd$ICD), ]
+
+```
+###############################################################################################
+# phecode categories
+###############################################################################################
+
+```{r table of all diagnoses}
+
+category_table <- table(encounter_comb_icd$PhecodeCategory)
+
+```
+
+```{r get unique per individual diagnoses}
+
+unique_diag <- unique(encounter_comb_icd[,c("pat_id", "Phecode", "PhecodeString", "PhecodeCategory")])
+
+```
+
+```{r table of unique diagnoses}
+
+unique_diag_cat_table <- table(unique_diag$PhecodeCategory)
+
+```
+
+dim(encounter_comb_icd)
+[1] 192999     12
+
+```{r first diagnosis by phecode}
+
+first_phecodes <- encounter_comb_icd %>%
+  group_by(pat_id, Phecode) %>%
+  slice_min(order_by = effective_age, n = 1, with_ties = FALSE) %>%
+  ungroup()
+
+
+```
+
+dim(first_phecodes)
+[1] 659613     13
+  
+
+```{r first diagnosis by phecode category}
+
+first_phecode_cat <- encounter_comb_icd %>%
+  group_by(pat_id, PhecodeCategory) %>%
+  slice_min(order_by = effective_age, n = 1, with_ties = FALSE) %>%
+  ungroup()
+
+```
+207856 entries
+
+```{r}
+
+first_asd <- first_phecodes[first_phecodes$Phecode == 313.30,] 
+
+```
+5530 dim and unique individuals
+
+```{r}
+
+
+```
+
+```{r}
+
+first_asd <- first_asd %>%
+  mutate(age_year = round(effective_age / 365.25))
+
+
+```
+
+mean(first_asd$age_year)
+[1] 6.25877
+
+sd(first_asd$age_year)
+[1] 4.55319
+
+min(first_asd$age_year)
+[1] 0
+
+```{r}
+
+first_asd_plot <- ggplot(first_asd, aes(x = age_year)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "black") +
+  labs(
+    title = "Frequency of Age at First ASD Diagnosis",
+    x = "Age (years)",
+    y = "Count"
+  ) +
+  theme_minimal(base_size = 14)
+
+first_asd_plot
+
+```
+
+```{r}
+
+ggsave("first_asd_plot_age.pdf", plot = first_asd_plot, width = 6, height = 4)
+
+```
+
+```{r add gender to asd}
+
+first_asd <- left_join(first_asd, pat_df, by = "pat_id")
+
+```
+
+```{r plot asd by gender}
+
+first_asd_plot_sex <- ggplot(first_asd, aes(x = age_year, fill = sex)) +
+  geom_histogram(binwidth = 1, color = "black", position = "dodge") +
+  scale_fill_manual(values = c("Male" = "blue", "Female" = "red")) +
+  labs(
+    title = "Frequency of Age at First ASD Diagnosis",
+    x = "Age (years)",
+    y = "Count",
+    fill = "Sex"
+  ) +
+  theme_minimal(base_size = 14)
+
+
+```
+
+###############################################################################################
+# unique phecode-individual
+###############################################################################################
+
+```{r}
+
+encounter_comb_icd_unq <- unique(encounter_comb_icd[, c("pat_id", "Phecode", "PhecodeString", "PhecodeCategory")])
+
+```
+
+```{r}
+
+icd_phe_counts_cat <- as.data.frame(table(encounter_comb_icd_unq$PhecodeCategory))
+
+colnames(icd_phe_counts_cat) <- c("PhecodeCategory", "Freq")
+
+```
+
+```{r}
+
+icd_phe_counts <- as.data.frame(table(encounter_comb_icd_unq$Phecode))
+
+colnames(icd_phe_counts) <- c("Phecode", "Freq")
+
+```
+
+```{r}
+
+
+icd_phe_counts_cat_indv <- encounter_comb_icd_unq %>%
+                              distinct(pat_id, PhecodeCategory) %>%     # keep one row per person+category
+                              count(PhecodeCategory)                    # count unique patients per category
+
+
+```
+
+```{r}
+
+icd_phe_counts_cat <- left_join(icd_phe_counts_cat, icd_phe_counts_cat_indv, by = "PhecodeCategory")
+
+```
+
+```{r top phecode total counts}
+
+# Example thresholds
+thresholds <- c(100, 250, 500, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000)
+
+# Count number of Var1 entries with Freq >= each threshold
+counts <- sapply(thresholds, function(thresh) {
+  sum(icd_phe_counts$Freq >= thresh)
+})
+
+# Combine into a data.frame for easy viewing
+threshold_counts <- data.frame(
+  threshold = thresholds,
+  n_vars = counts
+)
+
+threshold_counts
+
+
+```
+
+
+###############################################################################################
+# icd10 only
+###############################################################################################
+
+```{r}
+
+encounter_comb_icd_10 <- encounter_comb_icd[encounter_comb_icd$Flag == "10", ]
+
+```

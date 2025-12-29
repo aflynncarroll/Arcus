@@ -1,0 +1,409 @@
+---
+title: "Look at results from 1 array phewas"
+author: "Alex Flynn-Carroll"
+date: "2025-11-21"
+output: html_document
+---
+
+###############################################################################################
+# library
+###############################################################################################
+
+```{r packages}
+
+library(tidyverse)
+library(dplyr)
+library(data.table)
+library(ggplot2)
+library(qqman)
+library(PheWAS)
+library(jpeg)
+library(wesanderson)
+library(ggrepel)
+library(circlize)
+
+```
+
+###############################################################################################
+# read in data
+###############################################################################################
+
+```{r}
+
+# 1. List all files ending with "allchr.txt" in a folder
+file_list <- list.files(path = "/mnt/arcus/lab/users/flynncarra/projects/20251120_single_array_phewas/results/", pattern = "^phe_[0-9]+(\\.[0-9]+)?_allchr\\.txt$", full.names = TRUE)
+
+# 2. Read each file into a list of data frames
+df_list <- lapply(file_list, function(f) {
+  df <- read.table(f, header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+  df <- subset(df, p.value < 0.01)
+  df$source_file <- basename(f)
+  df
+})
+
+# 3. Combine all data frames into one
+res <- do.call(rbind, df_list)
+
+rm(df_list)
+
+```
+
+```{r}
+
+
+
+phenos <- read.table("/mnt/arcus/lab/users/flynncarra/projects/20251103_phewas_v3_phenotypes/array_eur_total_phe_200_v2.tsv",
+                 header = TRUE,       # first row has column names
+                 sep = "\t",          # tab-separated
+                 stringsAsFactors = FALSE)
+
+
+```
+
+```{r}
+
+phe_604.1 <- read.table("/mnt/arcus/lab/users/flynncarra/projects/20251113_saige_phewas_total_v2/results/phe_604.1_allchr.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+
+```
+
+```{r}
+
+phe_751.12 <- read.table("/mnt/arcus/lab/users/flynncarra/projects/20251120_single_array_phewas/results/phe_751.12_allchr.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+
+```
+
+```{r}
+
+phe_495.2 <- read.table("/mnt/arcus/lab/users/flynncarra/projects/20251120_single_array_phewas/results/phe_495.2_allchr.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+```
+
+```{r}
+
+phe_558 <- read.table("/mnt/arcus/lab/users/flynncarra/projects/20251120_single_array_phewas/results/phe_558_allchr.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)	
+
+
+```
+
+phe_276.5_allchr.txt
+```{r}
+
+phe_276.5 <- read.table("/mnt/arcus/lab/users/flynncarra/projects/20251120_single_array_phewas/results/phe_276.5_allchr.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)	
+
+```
+
+```{r icd to phecode map}
+
+phecode_map <- read.csv("../20250801_arcus_phenotype_counts/Phecode_map_v1_2_icd9_icd10cm.csv")
+
+```
+
+###############################################################################################
+# Phecodes
+###############################################################################################
+
+```{r unique phecode descriptions}
+
+phecodes <- unique(phecode_map[,c("Phecode", "PhecodeString")])
+
+phecodes <- phecodes %>%
+  group_by(Phecode) %>%
+  summarise(
+    PhecodeString = paste(unique(PhecodeString), collapse = "; "),
+    .groups = "drop"
+  )
+
+colnames(phecodes) <- c("phecode", "PhecodeString")
+
+phecodes$phecode <- as.character(phecodes$phecode)
+
+```
+
+###############################################################################################
+# plot results
+###############################################################################################
+
+```{r}
+
+res <- res[res$source_file != "phe_604.1_allchr.txt",] 
+
+res <- res[res$source_file != "phe_751.12_allchr.txt",]
+
+
+
+```
+
+```{r}
+
+res$phecode <- str_extract(res$source_file, "(?<=phe_).*?(?=_allchr\\.txt)")
+
+```
+
+```{r}
+
+top_hits <- res[res$p.value<=5e-8,]
+
+top_hits <- left_join(top_hits, phecodes, by="phecode")
+
+```
+
+```{r}
+
+top_hits_save <- top_hits[,c("MarkerID", "AF_Allele2", "BETA", "SE", "p.value", "N_case", "N_ctrl", "phecode", "PhecodeString")]
+
+```
+
+```{r}
+
+write_csv(top_hits_save, "array_1c18651582_phewas_saige.csv")
+
+```
+
+```{r}
+
+filtered_phe_man_phe <- phewasManhattan(data.frame(phenotype = res$phecode, p = res$p.value), 
+                                    title = "Arcus EUR Array 1c18651582; Phecodes", 
+                                    annotate.size=2,
+                                    size.x.labels=5, 
+                                    size.y.labels=5,
+                                    significant.line = 5e-8,
+                                    point.size =1)+ coord_cartesian(ylim = c(2, NA))
+
+```
+
+```{r}
+
+# Save as JPEG, specify size in inches
+jpeg(
+  filename = "array_1c18651582_phe_man_phe_gws_5e8.jpg",
+  width = 8,        # width in inches
+  height = 4,       # height in inches
+  units = "in",     # tells R that width/height are in inches
+  res = 300         # resolution in DPI (dots per inch)
+)
+
+# Your plot
+filtered_phe_man_phe
+
+# Important: close the device to finalize the file
+dev.off()
+
+```
+
+###############################################################################################
+# GWAS Plots
+###############################################################################################
+
+```{r}
+
+camgo_man <- manhattan(phe_751.12[phe_751.12$p.value > 0, ],
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerID",
+          p = "p.value",
+          main = "Manhattan Plot: EUR Congenital anomalies of male genital organs (751.12)")
+#          ylim = c(0, max(-log10(phe_751.12$p.value)) + 1))
+
+camgo_man
+
+```
+
+```{r}
+
+chisq_camgo <- qchisq(1 - phe_751.12$p.value, 1)
+lambda_gc_camgo <- median(chisq_camgo) / qchisq(0.5, 1)
+lambda_gc_camgo
+
+
+```
+
+```{r}
+
+qq(asd_res$p.value, main = sprintf("ASD (313.3): EUR (λ = %.3f)", lambda_gc_asd))
+
+
+```
+
+```{r}
+
+pdf("ASD_QQ_tv.pdf", width = 6, height = 6)
+qq(asd_res$p.value, main = sprintf("ASD (313.3): EUR (λ = %.3f)", lambda_gc_asd))
+dev.off()
+
+
+```
+
+##### phe_495.2
+
+```{r}
+
+#phe_495.2
+
+awe_man <- manhattan(phe_495.2,
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerID",
+          p = "p.value",
+          main = "Manhattan Plot: EUR Asthma with exacerbation (495.2)",
+          ylim = c(0, max(-log10(phe_495.2$p.value)) + 1))
+
+awe_man
+
+```
+
+```{r}
+
+jpeg("awe_man_1a.jpg", width = 8*300, height = 6*300, res = 300)
+manhattan(phe_495.2,
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerID",
+          p = "p.value",
+          main = "EUR Asthma with exacerbation (495.2)",
+          ylim = c(0, max(-log10(phe_495.2$p.value)) + 1))
+dev.off()
+
+
+```
+
+```{r}
+
+chisq_awe <- qchisq(1 - phe_495.2$p.value, 1)
+lambda_gc_awe <- median(chisq_awe) / qchisq(0.5, 1)
+lambda_gc_awe
+
+
+```
+
+```{r}
+
+qq(phe_495.2$p.value, main = sprintf("Asthma with exacerbation (495.2): EUR (λ = %.3f)", lambda_gc_awe))
+
+
+```
+
+
+```{r}
+
+jpeg("AWE_QQ_1a.jpg", width = 1200, height = 1200, res = 150)
+qq(phe_495.2$p.value, main = sprintf("Asthma with exacerbation (495.2): EUR (λ = %.3f)", lambda_gc_awe))
+dev.off()
+
+
+```
+
+##### phe_558
+
+```{r}
+
+ng_man <- manhattan(phe_558,
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerID",
+          p = "p.value",
+          main = "Manhattan Plot: EUR Noninfectious gastroenteritis (558)",
+          ylim = c(0, max(-log10(phe_558$p.value)) + 1))
+
+ng_man
+
+```
+
+```{r}
+
+jpeg("ng_man_1a.jpg", width = 8*300, height = 6*300, res = 300)
+manhattan(phe_558,
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerID",
+          p = "p.value",
+          main = "EUR Noninfectious gastroenteritis (558)",
+          ylim = c(0, max(-log10(phe_558$p.value)) + 1))
+dev.off()
+
+
+```
+
+```{r}
+
+chisq_ng <- qchisq(1 - phe_558$p.value, 1)
+lambda_gc_ng <- median(chisq_ng) / qchisq(0.5, 1)
+lambda_gc_ng
+
+
+```
+
+```{r}
+
+qq(phe_558$p.value, main = sprintf(" Noninfectious gastroenteritis (558): EUR (λ = %.3f)", lambda_gc_ng))
+
+
+```
+
+
+```{r}
+
+jpeg("NG_QQ_1a.jpg", width = 1200, height = 1200, res = 150)
+qq(phe_558$p.value, main = sprintf(" Noninfectious gastroenteritis (558): EUR (λ = %.3f)", lambda_gc_ng))
+dev.off()
+
+
+```
+
+
+##### phe_276.5
+
+```{r}
+
+h_man <- manhattan(phe_276.5,
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerID",
+          p = "p.value",
+          main = "Manhattan Plot: EUR Hypovolemia (phe_276.5)",
+          ylim = c(0, max(-log10(phe_276.5$p.value)) + 1))
+
+h_man
+
+```
+
+```{r}
+
+jpeg("h_man_1a.jpg", width = 8*300, height = 6*300, res = 300)
+manhattan(phe_276.5,
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerID",
+          p = "p.value",
+          main = "EUR Hypovolemia (276.5)",
+          ylim = c(0, max(-log10(phe_276.5$p.value)) + 1))
+dev.off()
+
+
+```
+
+```{r}
+
+chisq_h <- qchisq(1 - phe_276.5$p.value, 1)
+lambda_gc_h <- median(chisq_h) / qchisq(0.5, 1)
+lambda_gc_h
+
+
+```
+
+```{r}
+
+qq(phe_276.5$p.value, main = sprintf("EUR Hypovolemia (276.5): EUR (λ = %.3f)", lambda_gc_h))
+
+
+```
+
+```{r}
+
+jpeg("H_QQ_1a.jpg", width = 1200, height = 1200, res = 150)
+qq(phe_276.5$p.value, main = sprintf("EUR Hypovolemia (276.5): EUR (λ = %.3f)", lambda_gc_h))
+dev.off()
+
+
+```

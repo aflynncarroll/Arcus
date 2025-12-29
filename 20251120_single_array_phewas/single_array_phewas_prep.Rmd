@@ -1,0 +1,128 @@
+---
+title: "filter 1c18651582 for phewas"
+author: "Alex Flynn-Carroll"
+date: "2025-11-20"
+output: html_document
+---
+
+###############################################################################################
+# library
+###############################################################################################
+
+```{r packages}
+
+library(tidyverse)
+library(dplyr)
+library(data.table)
+library(ggplot2)
+library(qqman)
+library(PheWAS)
+library(jpeg)
+library(wesanderson)
+library(ggrepel)
+library(circlize)
+
+```
+
+###############################################################################################
+# read in data
+###############################################################################################
+
+```{r}
+
+phenos <- read.table("/mnt/arcus/lab/users/flynncarra/projects/20251103_phewas_v3_phenotypes/array_eur_total_phe_200_v2.tsv",
+                 header = TRUE,       # first row has column names
+                 sep = "\t",          # tab-separated
+                 stringsAsFactors = FALSE)
+
+```
+
+```{r indv on each array}
+
+#/home/flynncarra/projects/20251029_variants_by_array/indv_by_array.csv
+arrays <- read.table("/mnt/arcus/lab/users/flynncarra/projects/20251029_variants_by_array/indv_by_array.csv",
+                 header = TRUE,       # first row has column names
+                 sep = ",",          # tab-separated
+                 stringsAsFactors = FALSE)
+
+```
+
+```{r}
+
+vcf_ids <- read.table("1c18651582_ids.txt", header = FALSE, stringsAsFactors = FALSE)
+
+```
+
+```{r}
+
+manifest <- read.csv("../20251008_phewas_saige_pheno/file_manifest.csv")
+
+manifest <- manifest[manifest$biosample_id %in% vcf_ids$V1,]
+
+manifest <- manifest[manifest$filename == "SCIT1011-AUTISM-GWAS_1c18651582.vcf.gz",]
+
+```
+
+###############################################################################################
+# read in data
+###############################################################################################
+
+```{r}
+
+setdiff(vcf_ids$V1, arrays$biosample_id)
+
+```
+
+```{r}
+
+bio_list <- intersect(vcf_ids$V1, arrays$biosample_id)
+
+```
+
+```{r}
+
+manifest <- manifest[manifest$biosample_id %in% bio_list,]
+
+```
+
+```{r}
+
+writeLines(as.character(manifest$biosample_id), "1c18651582_id_sub.txt")
+
+```
+
+```{r}
+
+writeLines(as.character(arrays[arrays$array == "34505c4e9a",]$biosample_id), "34505c4e9a_id_sub.txt")
+
+```
+
+```{r}
+
+writeLines(as.character(arrays[arrays$array == "3b4102e323",]$biosample_id), "3b4102e323_id_sub.txt")
+
+```
+
+```{r}
+
+writeLines(as.character(arrays[arrays$array == "e9229326cc",]$biosample_id), "e9229326cc_id_sub.txt")
+
+```
+
+```{r}
+
+writeLines(as.character(arrays[arrays$array == "eaa8d6126d",]$biosample_id), "eaa8d6126d_id_sub.txt")
+
+```
+
+```{r}
+
+array_list <- unique(arrays$array)
+
+```
+
+```{r}
+
+writeLines(array_list, "array_list.txt")
+
+```

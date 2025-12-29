@@ -1,0 +1,57 @@
+---
+title: "Look at diagnoses"
+author: "Alex Flynn-Carroll"
+date: "2025-12-11"
+output: html_document
+---
+
+###############################################################################################
+# library
+###############################################################################################
+
+```{r}
+
+library(bigrquery)
+library(tidyverse)
+library(dplyr)
+library(devtools)
+library(data.table)
+
+```
+
+###############################################################################################
+# read in data
+###############################################################################################
+
+```{r icd to phecode map}
+
+phecode_map <- read.csv("../20250801_arcus_phenotype_counts/Phecode_map_v1_2_icd9_icd10cm.csv")
+
+```
+
+```{r}
+
+phecodes_count <- read.csv("../20250908_phenotypes_v2/phecodes_counts_by_indv.csv")
+
+```
+
+```{r read pc df}
+
+pcs <- read.delim("../20251008_phewas_saige_pheno/atlas-onekg-pcs-ancestry.tsv", 
+                 header = TRUE, 
+                 stringsAsFactors = FALSE)
+
+
+```
+
+###############################################################################################
+# read in data
+###############################################################################################
+
+```{r change to binary}
+
+phecodes_binary <- phecodes_count
+
+phecodes_binary[, -1] <- ifelse(phecodes_count[, -1] >= 2, 1, 0)
+
+```

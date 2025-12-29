@@ -1,0 +1,56 @@
+---
+title: "Look at results of Plink2 PheWAS run"
+output: html_document
+date: "2025-11-10"
+---
+
+###############################################################################################
+# library
+###############################################################################################
+
+```{r packages}
+
+library(tidyverse)
+library(dplyr)
+library(data.table)
+library(ggplot2)
+library(qqman)
+library(PheWAS)
+library(jpeg)
+
+```
+
+###############################################################################################
+# read in data
+###############################################################################################
+
+```{r}
+
+test_df <- read.table("/home/flynncarra/projects/20251106_plink2_gwas/output_files//eur_phe_747.1_gwas_allchr.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+colnames(test_df) <- c("CHROM", "POS", "ID", "REF", "ALT", "PROVISIONAL_REF?", "A1", "OMITTED", "A1_FREQ", "FIRTH?", "TEST", "OBS_CT", "OR", "LOG(OR)_SE", "Z_STAT", "P", "ERRCODE")
+
+test_df_2 <- read.table("/home/flynncarra/projects/20251106_plink2_gwas/output_files/eur_phe_475_gwas_chr11.phe_475.glm.logistic.hybrid", header = F, sep = "\t", stringsAsFactors = FALSE)
+
+```
+
+ eur_phe_367.8_gwas_allchr.txt 
+```{r}
+
+# 1. List all files ending with "allchr.txt" in a folder
+file_list <- list.files(path = "/home/flynncarra/projects/20251106_plink2_gwas/output_files/", pattern = "eur_phe_[0-9]+_gwas_allchr\\.txt$", full.names = TRUE)
+
+# 2. Read each file into a list of data frames
+df_list <- lapply(file_list, function(f) {
+  df <- read.table(f, header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+  df <- subset(df, p.value < 0.01)
+  df$source_file <- basename(f)
+  df
+})
+
+# 3. Combine all data frames into one
+res <- do.call(rbind, df_list)
+
+rm(df_list)
+
+```

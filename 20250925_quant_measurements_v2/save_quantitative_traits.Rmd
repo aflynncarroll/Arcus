@@ -1,0 +1,762 @@
+---
+title: "Pick out Quantitative traits"
+output: html_document
+date: "2025-09-25"
+---
+
+https://cran.r-project.org/web/packages/zscorer/readme/README.html
+
+###############################################################################################
+# library
+###############################################################################################
+
+```{r packages}
+
+library(bigrquery)
+library(tidyverse)
+library(dplyr)
+library(devtools)
+library(data.table)
+library(ggplot2)
+library(cowplot)
+library(zscorer)
+library(patchwork)
+library(ggrepel)
+
+
+```
+
+###############################################################################################
+# read in data
+###############################################################################################
+
+https://docs.google.com/document/d/10W2jN5oHvuWXFANV4zi8RcChNYmE7ZzIsb47PPBex3k/edit?tab=t.65b2fqbcqh8a
+
+wget https://raw.githubusercontent.com/manning-lab/primed_consortia_legacy_project_phenotypes/main/ICD-10-Pregnancy_AB_22NOV2024.csv
+
+wget https://github.com/manning-lab/primed_consortia_legacy_project_phenotypes/raw/main/ICD-10CM-Pregnancy_Updated_AB_25Oct2024.csv
+
+wget https://github.com/manning-lab/primed_consortia_legacy_project_phenotypes/raw/main/ICD-9CM-Pregnancy_Updated_AB_25Oct2024.csv
+
+wget https://github.com/manning-lab/primed_consortia_legacy_project_phenotypes/raw/main/ICD-9CM-Cancer_AB_23Oct2024.csv
+
+wget https://github.com/manning-lab/primed_consortia_legacy_project_phenotypes/raw/main/ICD-10CM-Cancer_AB_23Oct2024.csv
+
+wget https://github.com/manning-lab/primed_consortia_legacy_project_phenotypes/raw/main/ICD-10-All_Cancer_AB_22NOV2024.csv
+
+```{r read phenotypes}
+
+phecodes_binary <- read.csv( "../20250908_phenotypes_v2/phecodes_binary_by_indv.csv")
+
+```
+
+```{r cancer and pregnancy icd codes}
+
+
+icd10_preg_nov <- read.csv("ICD-10-Pregnancy_AB_22NOV2024.csv")
+
+icd10_preg_oct <- read.csv("ICD-10CM-Pregnancy_Updated_AB_25Oct2024.csv")
+
+
+
+icd9_preg_oct <- read.csv("ICD-9CM-Pregnancy_Updated_AB_25Oct2024.csv")
+
+
+
+icd9_canc_oct <- read.csv("ICD-9CM-Cancer_AB_23Oct2024.csv")
+
+
+
+icd10_canc_oct <- read.csv("ICD-10CM-Cancer_AB_23Oct2024.csv")
+
+icd10_canc_nov <-read.csv("ICD-10-All_Cancer_AB_22NOV2024.csv")
+
+
+```
+
+```{r}
+
+phecodes <- read.csv("../20250908_phenotypes_v2/total_enounter_icd_phe.csv")
+
+```
+
+```{r icd to phecode map}
+
+phecode_map <- read.csv("../20250801_arcus_phenotype_counts/Phecode_map_v1_2_icd9_icd10cm.csv")
+
+```
+
+```{r get project id}
+
+bq_auth()
+project_id <- bq_projects()[1]
+
+```
+
+```{r encounter}
+
+query_encounter <- "
+SELECT
+  pat_id,
+  encounter_id,
+  effective_age,
+  admit_source_code,
+  admit_source_name,
+  height_raw,
+  height_cm,
+  weight_kg,
+  weight_oz,
+  head_circumference
+FROM
+  arcus.encounter
+"
+encounter_df <- bq_project_query(project_id, query_encounter) %>%
+  bq_table_download(bigint = "integer64") %>%
+  as_tibble()
+head(encounter_df)
+
+```
+
+ c("pat_id", "encounter_id", "effective_age","admit_source_code", "admit_source_name", "height_raw", "height_cm", "weight_kg", "weight_oz", "head_circumference", )
+ 
+```{r}
+
+query_patient <- "
+SELECT
+  pat_id,
+  sex,
+  race,
+  ethnicity,
+  birth_length_in,
+  birth_length_cm,
+  birth_weight_oz,
+  birth_weight_kg,
+  gestational_age_num,
+  dod_age,
+  country,
+  state
+FROM
+  arcus.patient
+
+"
+patient_df <- bq_project_query(project_id, query_patient) %>%
+  bq_table_download(bigint = "integer64") %>%
+  as_tibble()
+
+head(patient_df)
+
+```
+
+pat_id,
+sex,
+race,
+ethnicity,
+birth_length_in,
+birth_length_cm,
+birth_weight_oz,
+birth_weight_kg,
+gestational_age_num,
+dod_age,
+country,
+state
+
+###############################################################################################
+# encounter
+###############################################################################################
+
+```{r}
+
+# list of columns to check
+cols_to_check <- c("admit_source_code", "admit_source_name", "height_raw", "height_cm", "weight_kg", "weight_oz", "head_circumference")
+
+# keep only rows where at least one is not NA
+encounter_df <- encounter_df[rowSums(!is.na(encounter_df[cols_to_check])) > 0, ]
+
+
+```
+
+```{r}
+
+length(unique(encounter_df[!(is.na(encounter_df$head_circumference)),]$pat_id))
+
+```
+
+```{r}
+
+encounter_df <- left_join(encounter_df, patient_df[,c("pat_id", "sex")], by = "pat_id")
+
+```
+
+```{r}
+
+encounter_df$sex_num <- ifelse(encounter_df$sex == "Male", 1,
+                               ifelse(encounter_df$sex == "Female", 2, NA))
+
+```
+
+```{r}
+
+encounter_df$age_months <- floor(encounter_df$effective_age / 30.4375)  
+
+```
+
+Body mass index-for-age (bfa) z-scores for children aged between zero and 228 months
+age needs to be in days for this
+```{r calculate bmi-age-z}
+
+encounter_df <- addWGSR(data = encounter_df, sex = "sex_num", firstPart = "weight_kg", 
+               secondPart = "height_cm", thirdPart = "effective_age", index = "bfa", 
+               output = "bmiAgeZ", digits = 4)  
+```
+
+Head circumference-for-age (hca) z-scores for children aged between zero and 60 months
+head_circumference in cm
+```{r}
+
+encounter_df <- addWGSR(data = encounter_df, sex = "sex_num", firstPart = "head_circumference", 
+               secondPart = "effective_age", index = "hca", 
+               output = "hcAgeZ", digits = 4)  
+```
+
+
+BMI from sandra: 
+
+To consider an individual’s body mass index measurement, we first implemented the following measurement exclusion criteria:
+Excluded measurements for which age at measurement was less than 18 years
+Excluded measurement taken at inpatient or emergency department visits. Alternatively, kept only measurements taken at outpatient visits.
+Excluded measurements that had cancer or pregnancy codes at the time of BMI measurement
+Cancer
+Pregnancy
+After applying the above exclusions, we removed measurements that were outside +/- 6SD from the overall mean BMI in the total population.
+Once all above exclusions were applied, we used the remaining measurements to compute the final value for each individual by taking the median BMI. Age was calculated using the median age at measurement from the remaining measurements.
+
+https://phekb.org/phenotype/body-mass-index-bmi-0
+
+Weight for Age and Height for Age are legacy functions and use whole months for their calculations
+
+Weight-for-age (wfa)
+```{r wfa}
+
+encounter_df <- addWGSR(data = encounter_df, sex = "sex_num", firstPart = "weight_kg", 
+               secondPart = "effective_age", index = "wfa")
+```
+
+```{r remove NA's fr hfa}
+
+hfa_df <- na.omit(encounter_df[,c("pat_id", "encounter_id", "effective_age", "sex_num", "height_cm")])
+
+```
+
+```{r filter by age}
+
+hfa_df <- hfa_df[hfa_df$effective_age >= (24*30.4375) & hfa_df$effective_age <= (228*30.4375), ]
+
+```
+
+Height-for-age (hfa)
+```{r hfa}
+
+encounter_df <- addWGSR(data = encounter_df, sex = "sex_num", firstPart = "height_cm", 
+               secondPart = "age_months", index = "hfa")
+
+```
+
+```{r hfa}
+
+hfa_df <- addWGSR(data = hfa_df, sex = "sex_num", firstPart = "height_cm", 
+               secondPart = "effective_age", index = "hfa")
+
+```
+
+```{r}
+
+getWGS(sexObserved = 1,
+              firstPart = 86.49970,      # Height in centimetres
+              secondPart = 40,
+              index = "hfa")   
+
+```
+
+
+Weight-for-length (wfl)
+```{r wfl}
+
+
+```
+
+Weight-for-height (wfh)
+```{r wfh}
+
+
+```
+
+```{r}
+
+write_csv(encounter_df, "encounter_quant.csv")
+
+```
+
+```{r}
+
+hist(encounter_df$bmiAgeZ,
+     breaks = 30,         # more bins to see detail
+     main = "Distribution of BMI-for-Age Z-scores",
+     xlab = "BMI z-score",
+     col = "skyblue")
+
+```
+
+###############################################################################################
+# Patient DF
+###############################################################################################
+
+```{r}
+
+patient_df$birth_age <- 0
+
+```
+
+```{r}
+
+patient_df$sex_num <- ifelse(patient_df$sex == "Male", 1,
+                               ifelse(patient_df$sex == "Female", 2, NA))
+
+```
+
+```{r}
+
+patient_df <- addWGSR(data = patient_df, sex = "sex_num", firstPart = "birth_weight_kg", 
+               secondPart = "birth_length_cm", thirdPart = "birth_age", index = "bfa", 
+               output = "bmiAgeZ", digits = 4)  
+```
+
+```{r}
+
+patient_df$gestational_age_num <- as.numeric(patient_df$gestational_age_num)
+
+```
+
+```{r}
+
+# function to create a pie chart for any column
+make_pie <- function(data, column_name) {
+  data %>%
+    filter(!is.na(.data[[column_name]])) %>%
+    count(!!sym(column_name)) %>%
+    ggplot(aes(x = "", y = n, fill = !!sym(column_name))) +
+    geom_col(width = 1) +
+    coord_polar(theta = "y") +
+    theme_void() +
+    labs(title = paste("Distribution of", column_name), fill = column_name)
+}
+
+```
+
+```{r}
+
+make_pie <- function(data, column_name) {
+  df <- data %>%
+    filter(!is.na(.data[[column_name]])) %>%
+    count(!!sym(column_name)) %>%
+    arrange(desc(n)) %>%
+    mutate(
+      prop = n / sum(n),
+      cumulative = cumsum(prop),
+      midpoint = cumulative - prop / 2,
+      angle = 2 * pi * midpoint,
+      # radius for text outside the pie
+      label_x = 1.2 * sin(angle),
+      label_y = 1.2 * cos(angle)
+    )
+
+  ggplot(df, aes(x = "", y = prop, fill = !!sym(column_name))) +
+    geom_col(width = 1, color = "white") +
+    coord_polar(theta = "y") +
+    geom_text(
+      aes(x = label_x, y = label_y, label = n),
+      color = "black", size = 3.5, fontface = "bold"
+    ) +
+    theme_void() +
+    labs(
+      title = paste("Distribution of", column_name),
+      fill = column_name
+    )
+}
+
+
+```
+
+```{r}
+
+# make a pie chart for each column
+pie_race <- make_pie(patient_df, "race")
+pie_ethnicity <- make_pie(patient_df, "ethnicity")
+pie_country <- make_pie(patient_df, "country")
+pie_state <- make_pie(patient_df, "state")
+pie_sex <- make_pie(patient_df, "sex")
+
+```
+
+```{r}
+
+ggsave("acrus_race.pdf", plot = pie_race, width = 6, height = 4, units = "in")
+
+```
+
+```{r}
+
+ggsave("acrus_sex.pdf", plot = pie_sex, width = 6, height = 4, units = "in")
+
+```
+
+```{r}
+
+ggsave("acrus_state.pdf", plot = pie_state, width = 6, height = 4, units = "in")
+
+```
+###############################################################################################
+# exclusion codes
+###############################################################################################
+
+```{r get unique preg canc codes}
+
+icd10_cancer <- unique(c(icd10_canc_oct$DX_CODE_2, icd10_canc_nov$CONCEPT_CODE))
+  
+icd9_cancer <- unique(icd9_canc_oct$DX_CODE_2)
+
+icd10_pregnancy <- unique(c(icd10_preg_nov$CONCEPT_CODE, icd10_preg_oct$DX_CODE_2))
+  
+icd9_pregnancy <- unique(icd9_preg_oct$DX_CODE_2)
+  
+```
+
+```{r make icd9 and icd10 code lists}
+
+icd9_pc <- c(icd9_cancer, icd9_pregnancy)
+
+icd10_pc <- c(icd10_cancer, icd10_pregnancy)
+
+```
+
+```{r}
+
+icd9_phe <- phecode_map[phecode_map$ICD %in% icd9_pc & phecode_map$Flag == 9,]$Phecode
+
+icd10_phe <- phecode_map[phecode_map$ICD %in% icd10_pc & phecode_map$Flag == 10,]$Phecode
+
+phe_pc <- unique(c(icd9_phe, icd10_phe))
+
+```
+
+```{r}
+
+phecodes_icd10 <- phecodes[phecodes$icd == 10 & phecodes$code %in% icd10_pc,]
+
+phecodes_icd9 <- phecodes[phecodes$icd == 9 & phecodes$code %in% icd9_pc,]
+
+phecodes_pc <- rbind(phecodes_icd10, phecodes_icd9)
+
+
+rm(phecodes_icd10, phecodes_icd9)
+
+```
+
+
+Phecodes had man non-specific diagnosis terms
+```{r}
+
+phecodes_pc <- phecodes[phecodes$Phecode %in% phe_pc,]
+
+```
+
+Persons with potential health hazards related to socioeconomic, psychosocial, and other circumstances
+
+```{r}
+
+phecodes_pc <- phecodes_pc[phecodes_pc$Phecode != "1010.7", ]
+
+```
+
+###############################################################################################
+# head_circumference
+###############################################################################################
+
+```{r}
+
+hc_df <- encounter_df[!is.na(encounter_df$head_circumference),]
+
+```
+
+```{r}
+
+hc_df_birth <- hc_df[hc_df$effective_age == 0 , ]
+
+```
+3 indv with multiple birth measurements
+   1    2 
+1907    3 
+they are about the same; +/- 0.5cm
+
+```{r}
+
+hc_df_birth_largest <- hc_df_birth %>%
+  group_by(pat_id) %>%
+  slice_max(order_by = head_circumference, n = 1, with_ties = FALSE) %>%
+  ungroup()
+
+
+```
+
+```{r}
+
+birth_headc_hist <- hc_df_birth_largest %>%
+  ggplot( aes(x=head_circumference )) +
+    geom_histogram( binwidth=1, fill="blue3", color="#e9ecef", alpha=0.9) +
+    ggtitle("Head Circumference at Birth (cm)") +
+    theme(
+      plot.title = element_text(size=15)
+    )
+
+
+```
+
+```{r}
+
+ggsave("birth_headc_hist.pdf", plot = birth_headc_hist, width = 6, height = 4, units = "in")
+
+```
+
+###############################################################################################
+# bmi
+###############################################################################################
+weight(kg)/height(m)^2
+
+```{r}
+
+encounter_df$bmi <- encounter_df$weight_kg/(encounter_df$height_cm/100)^2
+
+```
+
+```{r}
+
+bmi_mean <- mean(encounter_df$bmi, na.rm = TRUE)
+bmi_sd   <- sd(encounter_df$bmi, na.rm = TRUE)
+
+
+```
+
+```{r}
+
+encounter_df <- encounter_df %>%
+  mutate(bmi_pruned = ifelse(
+    bmi >= bmi_mean - 6 * bmi_sd & bmi <= bmi_mean + 6 * bmi_sd,
+    bmi,
+    NA
+  ))
+
+
+```
+
+```{r}
+
+total_bmi_plot <- ggplot(encounter_df, aes(x = effective_age, y = bmi_pruned, group = pat_id, color = factor(pat_id))) +
+  geom_line(alpha = 0.6) +
+  geom_point(size = 1) +
+  geom_vline(xintercept = 6574.5, linetype = "dashed", color = "black", linewidth = 1) +
+  labs(x = "Age", y = "BMI", color = "Individual") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+
+```
+
+```{r}
+
+mean_max_age_bmi <- encounter_df %>%
+  # keep only rows with non-missing BMI
+  filter(!is.na(bmi_pruned)) %>%
+  # group by individual
+  group_by(pat_id) %>%
+  # get each person's maximum effective_age
+  summarize(max_age = max(effective_age, na.rm = TRUE)) %>%
+  # compute the mean of these maximum ages
+  summarize(mean_max_age_bmi = mean(max_age, na.rm = TRUE)) %>%
+  pull(mean_max_age_bmi)
+
+```
+
+```{r}
+
+ggsave("raw_bmi_plot.pdf", plot = total_bmi_plot, width = 8, height = 6, units = "in")
+
+```
+
+```{r}
+
+
+encounter_df <- encounter_df %>%
+  mutate(bmiz_pruned = ifelse(
+    bmiAgeZ >= - 6  & bmiAgeZ <= 6,
+    bmiAgeZ,
+    NA
+  ))
+
+
+```
+
+```{r}
+
+bmiz_plot <- ggplot(encounter_df, aes(x = effective_age, y = bmiz_pruned, group = pat_id, color = factor(pat_id))) +
+  geom_line(alpha = 0.6) +
+  geom_point(size = 1) +
+  geom_vline(xintercept = 6574.5, linetype = "dashed", color = "black", linewidth = 1) +
+  labs(x = "Age", y = "BMI-Age-Z", color = "Individual") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+```
+
+```{r}
+
+ggsave("bmiz_plot.pdf", plot = bmiz_plot, width = 8, height = 6, units = "in")
+
+```
+
+```{r}
+
+headc_mean <- mean(encounter_df$head_circumference, na.rm = TRUE)
+headc_sd   <- sd(encounter_df$head_circumference, na.rm = TRUE)
+
+
+```
+
+```{r}
+
+encounter_df <- encounter_df %>%
+  mutate(head_circumference_pruned = ifelse(
+    head_circumference >= headc_mean - 6 * headc_sd & head_circumference <= headc_mean + 6 * headc_sd,
+    head_circumference,
+    NA
+  ))
+
+
+```
+
+```{r}
+
+headc_plot <- ggplot(encounter_df, aes(x = effective_age, y =head_circumference_pruned , group = pat_id, color = factor(pat_id))) +
+  geom_line(alpha = 0.6) +
+  geom_point(size = 1) +
+  geom_vline(xintercept = 6574.5, linetype = "dashed", color = "black", linewidth = 1) +
+  labs(x = "Age (Days)", y = "Head Circumference (cm)", color = "Individual") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+```
+
+```{r}
+
+ggsave("head_circ_total.pdf", plot = headc_plot, width = 8, height = 6, units = "in")
+
+```
+
+
+```{r}
+
+encounter_df <- encounter_df %>%
+  mutate(hcz_pruned = ifelse(
+    hcAgeZ  >= -6 & hcAgeZ <=  6,
+    hcAgeZ ,
+    NA
+  ))
+
+
+```
+
+```{r}
+
+headcz_plot <- ggplot(encounter_df, aes(x = effective_age, y =hcz_pruned , group = pat_id, color = factor(pat_id))) +
+  geom_line(alpha = 0.6) +
+  geom_point(size = 1) +
+  xlim(-1, (5*365.25)) +
+ # geom_vline(xintercept = 6574.5, linetype = "dashed", color = "black", linewidth = 1) +
+  labs(x = "Age (Days)", y = "Head Circumference Z-score", color = "Individual") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+```
+
+```{r}
+
+bmiz__prune_spag <- ggplot(encounter_df, aes(x = effective_age, y = bmiz_pruned, group = pat_id)) +
+  geom_line(alpha = 0.1, color = "steelblue") +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  labs(title = "Individual BMI trajectories")
+
+```
+
+```{r}
+
+bmiz_freq <- table(encounter_df$pat_id[!is.na(encounter_df$bmiz_pruned)])
+
+
+```
+
+```{r}
+
+bmiz__prune_spag_NG0MNYETRS86L <- ggplot(encounter_df[encounter_df$pat_id == "NG0MNYETRS86L",], aes(x = effective_age, y = bmiz_pruned, group = pat_id)) +
+  geom_line(alpha = 1, color = "steelblue") +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  labs(title = "Individual BMI trajectories (sample)")
+
+```
+
+```{r}
+
+bmiz_plot_NG0MNYETRS86L <- ggplot(encounter_df[encounter_df$pat_id == "NG0MNYETRS86L",], aes(x = effective_age, y = bmiz_pruned, group = pat_id, color = factor(pat_id))) +
+  geom_line(alpha = 0.6) +
+  geom_point(size = 1) +
+  geom_vline(xintercept = 6574.5, linetype = "dashed", color = "black", linewidth = 1) +
+  labs(x = "Age", y = "BMI-Age-Z", color = "Individual") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+```
+
+```{r}
+
+ggsave("indv_1_bmiz_age.pdf", plot = bmiz_plot_NG0MNYETRS86L, width = 8, height = 6, units = "in")
+
+```
+
+```{r}
+
+bmi_plot_NG0MNYETRS86L <- ggplot(encounter_df[encounter_df$pat_id == "NG0MNYETRS86L",], aes(x = effective_age, y = bmi, group = pat_id, color = factor(pat_id))) +
+  geom_line(alpha = 0.6) +
+  geom_point(size = 1) +
+  geom_vline(xintercept = 6574.5, linetype = "dashed", color = "black", linewidth = 1) +
+  labs(x = "Age", y = "BMI", color = "Individual") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+```
+
+```{r}
+
+ggsave("indv_1_bmi_age.pdf", plot = bmi_plot_NG0MNYETRS86L, width = 8, height = 6, units = "in")
+
+```
+
+```{r}
+
+# Find the largest effective_age per pat_id
+max_age_df <- encounter_df %>%
+  group_by(pat_id) %>%
+  summarize(max_effective_age = max(effective_age, na.rm = TRUE))
+
+# View result
+head(max_age_df)
+
+```

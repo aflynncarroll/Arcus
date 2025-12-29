@@ -1,0 +1,147 @@
+---
+title: "Results from total variant array PheWas"
+output: html_document
+date: "2025-10-29"
+---
+
+###############################################################################################
+# library
+###############################################################################################
+
+```{r packages}
+
+library(tidyverse)
+library(dplyr)
+library(data.table)
+library(ggplot2)
+library(qqman)
+library(PheWAS)
+
+```
+
+###############################################################################################
+# read in data
+###############################################################################################
+
+```{r}
+
+# 1. List all files ending with "allchr.txt" in a folder
+file_list <- list.files(path = "/mnt/arcus/lab/users/flynncarra/projects/20251023_SAIGE_eur_total_var/results/", pattern = "allchr\\.txt$", full.names = TRUE)
+
+# 2. Read each file into a list of data frames
+df_list <- lapply(file_list, function(f) {
+  df <- read.table(f, header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+  df <- subset(df, p.value < 0.01)
+  df$source_file <- basename(f)
+  df
+})
+
+# 3. Combine all data frames into one
+res <- do.call(rbind, df_list)
+
+rm(df_list)
+
+```
+
+```{r icd to phecode map}
+
+phecode_map <- read.csv("../20250801_arcus_phenotype_counts/Phecode_map_v1_2_icd9_icd10cm.csv")
+
+```
+
+###############################################################################################
+# plot results
+###############################################################################################
+
+```{r}
+
+res <- res[res$source_file != "phe_604.1_allchr.txt",]
+
+```
+
+
+```{r}
+
+res$phecode <- str_extract(res$source_file, "(?<=phe_).*?(?=_allchr\\.txt)")
+
+```
+
+```{r}
+
+top_hits <- res[res$p.value<=5e-7,]
+
+```
+
+```{r}
+
+top_hits <- left_join(top_hits, )
+
+```
+
+```{r}
+
+filtered_phe_man <- phewasManhattan(data.frame(phenotype = res$phecode, p = res$p.value), 
+                                    annotate.angle=45, 
+                                    title = "Arcus EUR Array", 
+                                    annotate.size=2,
+                                    size.x.labels=5, size.y.labels=5,
+                                    significant.line = 5e-7)+ coord_cartesian(ylim = c(2, 9))
+
+```
+
+```{r}
+
+# Save as JPEG, specify size in inches
+jpeg(
+  filename = "total_var_phewas_gws_5e7.jpg",
+  width = 8,        # width in inches
+  height = 4,       # height in inches
+  units = "in",     # tells R that width/height are in inches
+  res = 300         # resolution in DPI (dots per inch)
+)
+
+# Your plot
+filtered_phe_man
+
+# Important: close the device to finalize the file
+dev.off()
+
+```
+
+```{r}
+
+filtered_phe_man_gws <- phewasManhattan(data.frame(phenotype = res$phecode, 
+                                                   p = res$p.value), 
+                                                   annotate.angle=0, 
+                                                    title = "Arcus EUR Array", 
+                                                    annotate.size=2,
+                                                    size.x.labels=5, size.y.labels=5,
+                                                   significant.line = 5e-8) + coord_cartesian(ylim = c(2, 9))
+
+```
+
+
+```{r}
+
+# Save as JPEG, specify size in inches
+jpeg(
+  filename = "total_var_phewas_gws.jpg",
+  width = 8,        # width in inches
+  height = 4,       # height in inches
+  units = "in",     # tells R that width/height are in inches
+  res = 300         # resolution in DPI (dots per inch)
+)
+
+# Your plot
+filtered_phe_man_gws
+
+# Important: close the device to finalize the file
+dev.off()
+
+```
+
+```{r}
+
+write_csv(top_hits, "top_hits_total_array.csv")
+
+```

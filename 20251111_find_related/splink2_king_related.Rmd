@@ -1,0 +1,74 @@
+---
+title: "Find related individuals"
+author: "Alex Flynn-Carroll"
+date: "2025-11-11"
+output: html_document
+---
+
+
+```{r}
+
+library(data.table)
+
+
+```
+
+```{r}
+
+KING_FILE <- "./eur_0.05_shared.king"
+THRESH <- 0.0884
+
+# read header (sample IDs)
+hdr <- scan(KING_FILE, what=character(), nlines=1, sep="\t", quiet=TRUE)
+ids <- hdr[-1]   # drop the first column header (usually placeholder)
+
+# read entire matrix (may be large)
+dt <- fread(KING_FILE, header=FALSE)
+
+```
+
+```{r}
+
+dt <- as.matrix(dt)
+
+```
+
+```{r}
+
+# extract upper triangle (exclude diagonal)
+kin_vals <- mat[lower.tri(mat, diag = FALSE)]
+
+# count how many values are >= 0.0884
+num_related <- sum(kin_vals >= 0.0884, na.rm = TRUE)
+
+```
+
+
+```{r}
+
+kin_vals <- dt[upper.tri(dt, diag = FALSE)]
+
+```
+
+```{r}
+
+# dt[ ,1] is row ids, columns 2..(ncol) are numeric kinship
+row_ids <- dt[[1]]
+mat <- as.matrix(dt[, -1, with=FALSE])   # numeric matrix
+
+# find indices in upper triangle over threshold
+inds <- which(mat > THRESH & upper.tri(mat, diag=FALSE), arr.ind=TRUE)
+
+pairs <- data.table(
+  IID1 = row_ids[inds[,1]],
+  IID2 = ids[inds[,2]],
+  Kinship = mat[inds]
+)
+
+# save and summary
+fwrite(pairs, "related_pairs_r.csv")
+nrow(pairs)
+length(unique(c(pairs$IID1, pairs$IID2)))
+summary(pairs$Kinship)
+
+```

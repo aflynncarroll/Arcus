@@ -1,0 +1,275 @@
+---
+title: "Test for disease enrichment by array"
+author: "Alex Flynn-Carroll"
+date: "2025-11-18"
+output: html_document
+---
+
+###############################################################################################
+# library
+###############################################################################################
+
+```{r packages}
+
+library(tidyverse)
+library(dplyr)
+library(data.table)
+library(ggplot2)
+library(qqman)
+library(PheWAS)
+library(jpeg)
+library(wesanderson)
+library(ggrepel)
+library(circlize)
+
+```
+
+###############################################################################################
+# read in data
+###############################################################################################
+
+```{r eur indv}
+
+#/mnt/arcus/lab/users/flynncarra/projects/20251008_phewas_saige_pheno/eur_ids.txt
+
+eur_indv <- read.table("/mnt/arcus/lab/users/flynncarra/projects/20251008_phewas_saige_pheno/eur_ids.txt",
+                 header = F,       # first row has column names
+                 sep = "\t",          # tab-separated
+                 stringsAsFactors = FALSE)
+```
+
+```{r indv on each array}
+
+#/home/flynncarra/projects/20251029_variants_by_array/indv_by_array.csv
+arrays <- read.table("/mnt/arcus/lab/users/flynncarra/projects/20251029_variants_by_array/indv_by_array.csv",
+                 header = TRUE,       # first row has column names
+                 sep = ",",          # tab-separated
+                 stringsAsFactors = FALSE)
+
+```
+
+```{r}
+
+phenos <- read.table("/mnt/arcus/lab/users/flynncarra/projects/20251103_phewas_v3_phenotypes/array_eur_total_phe_200_v2.tsv",
+                 header = TRUE,       # first row has column names
+                 sep = "\t",          # tab-separated
+                 stringsAsFactors = FALSE)
+
+```
+
+###############################################################################################
+# array enrichment
+###############################################################################################
+
+```{r}
+
+eur_arrays <- arrays[arrays$biosample_id %in% eur_indv$V1,]
+
+```
+
+```{r}
+arrays <- c("array_3b4102e323", "array_eaa8d6126d", "array_34505c4e9a", "array_1c18651582", "array_e9229326cc")
+phenos$ARRAY <- apply(phenos[, arrays], 1, function(x) {
+  arr <- which(x == 1)
+  if(length(arr) == 0) return(NA)
+  paste(arrays[arr], collapse = ";")  # use actual array names
+})
+
+```
+
+
+
+phenos$ARRAY <- apply(phenos[, arrays], 1, function(x) {
+  arr <- which(x == 1)
+  if(length(arr) == 0) return(NA)
+  paste0("array_", arr)
+})
+
+table(phenos$ARRAY) 
+
+
+
+
+```{r}
+
+diagnoses <- grep("^phe_", colnames(phenos), value=TRUE)
+results <- data.frame(phenotype=character(), pval=numeric(), stringsAsFactors=FALSE)
+
+for(ph in diagnoses){
+  tab <- table(phenos[[ph]], phenos$ARRAY)
+  if(all(dim(tab) == c(2,5))) { 
+    p <- chisq.test(tab)$p.value
+    results <- rbind(results, data.frame(phenotype=ph, pval=p))
+  }
+}
+
+results <- results[order(results$pval),]
+results
+
+```
+
+```{r}
+
+diagnoses <- grep("^phe_", colnames(phenos), value = TRUE)
+results <- data.frame(stringsAsFactors = FALSE)
+
+for(ph in diagnoses){
+  # Create a table of counts by phenotype (0/1) and ARRAY
+  tab <- table(phenos[[ph]], phenos$ARRAY)
+  
+  # Ensure the table has exactly 2 rows (0/1) and 5 columns (arrays)
+  if(all(dim(tab) == c(2,5))) { 
+    # Run chi-squared test
+    p <- chisq.test(tab)$p.value
+    
+    # Get counts of cases (phenos==1) per array
+    case_counts <- tab["1", ]  # row "1" = cases
+    
+    # Combine into a data frame row
+    row <- data.frame(
+      phenotype = ph,
+      pval = p,
+      t(case_counts),  # transpose to make each array a column
+      stringsAsFactors = FALSE
+    )
+    
+    # Optionally rename columns to indicate arrays
+    colnames(row)[3:7] <- paste0("ARRAY_", colnames(tab))
+    
+    # Append to results
+    results <- rbind(results, row)
+  }
+}
+
+# Order by p-value
+results <- results[order(results$pval), ]
+results
+
+
+```
+
+```{r}
+
+# Get all phenotype columns starting with "phe_"
+diagnoses <- grep("^phe_", colnames(phenos), value = TRUE)
+
+# Initialize results data frame
+results_counts <- data.frame(stringsAsFactors = FALSE)
+
+for(ph in diagnoses){
+  # Table of counts by phenotype (0/1) and ARRAY
+  tab <- table(phenos[[ph]], phenos$ARRAY)
+  
+  # Only include tables with exactly 2 rows (0/1) and 5 columns (arrays)
+  if(all(dim(tab) == c(2,5))) { 
+    
+    # Extract cases (1) and controls (0) counts
+    case_counts <- tab["1", ]
+    control_counts <- tab["0", ]
+    
+    # Create a row with phenotype, then case/control counts
+    row <- data.frame(
+      phenotype = ph,
+      t(case_counts),
+      t(control_counts),
+      stringsAsFactors = FALSE
+    )
+    
+    # Rename columns: Cases and Controls for each array
+    colnames(row) <- c(
+      "phenotype",
+      paste0("cases_", colnames(tab)),
+      paste0("controls_", colnames(tab))
+    )
+    
+    # Append to results
+    results_counts <- rbind(results_counts, row)
+  }
+}
+
+# Optional: view first few rows
+head(results_counts)
+
+```
+```{r}
+
+# Get all phenotype columns starting with "phe_"
+diagnoses <- grep("^phe_", colnames(phenos), value = TRUE)
+
+# Initialize results data frame
+results_counts <- data.frame(stringsAsFactors = FALSE)
+
+for(ph in diagnoses){
+  # Table of counts by phenotype (0/1) and ARRAY
+  tab <- table(phenos[[ph]], phenos$ARRAY)
+  
+  # Only include tables with exactly 2 rows (0/1) and 5 columns (arrays)
+  if(all(dim(tab) == c(2,5))) { 
+    
+    # Extract case counts
+    case_counts <- tab["1", ]
+    
+    # Calculate proportion of cases per array
+    prop_cases <- case_counts / colSums(tab)
+    
+    # Create a row with phenotype, case counts, and proportions
+    row <- data.frame(
+      phenotype = ph,
+      t(case_counts),
+      t(prop_cases),
+      stringsAsFactors = FALSE
+    )
+    
+    # Rename columns
+    colnames(row) <- c(
+      "phenotype",
+      paste0("cases_", colnames(tab)),
+      paste0("prop_cases_", colnames(tab))
+    )
+    
+    # Append to results
+    results_counts <- rbind(results_counts, row)
+  }
+}
+
+# View first few rows
+head(results_counts)
+
+
+```
+```{r}
+
+phenos_for_counts <- c("phe_315.2", "phe_313.3", "phe_300.1", "phe_313.1", "phe_327", "phe_747.1", "phe_276.12", "phe_771","phe_1010.7", "phe_1010.3", "phe_1010")
+
+counts_save <- results_counts[results_counts$phenotype %in% phenos_for_counts,]
+
+```
+
+```{r}
+
+write.csv(counts_save, "pheno_counts_array.csv")
+
+```
+
+```{r}
+
+  tab <- table(phenos$phe_604.1, phenos$ARRAY)
+  if(all(dim(tab) == c(2,5))) { 
+    p <- chisq.test(tab)$p.value
+    results <- rbind(results, data.frame(phenotype=ph, pval=p))
+  }
+
+```
+
+```{r}
+
+count_phe_604.1 <- results_counts[results_counts$phenotype =="phe_604.1",]
+
+```
+
+```{r}
+
+write.csv(count_phe_604.1, "count_phe_604.1.csv")
+
+```
+

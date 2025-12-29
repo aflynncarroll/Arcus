@@ -1,0 +1,384 @@
+---
+title: "Meta results blood traits"
+author: "Alex Flynn-Carroll"
+date: "2025-11-26"
+output: html_document
+---
+
+###############################################################################################
+# library
+###############################################################################################
+
+```{r packages}
+
+library(tidyverse)
+library(dplyr)
+library(data.table)
+library(ggplot2)
+library(qqman)
+library(PheWAS)
+library(jpeg)
+library(wesanderson)
+library(ggrepel)
+library(circlize)
+
+```
+
+###############################################################################################
+# read in data
+###############################################################################################
+
+```{r}
+
+wbc_meta <- read.table("meta_results_WBC1.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+
+```
+
+```{r}
+
+rbc_meta <- read.table("meta_results_RBC1.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+
+```
+
+```{r}
+
+wbc_1c18651582 <- read.table("../20251126_arrays_blood_phewas/results/1c18651582_median_WBC_allchr.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+
+```
+
+```{r}
+
+wbc_34505c4e9a <- read.table("../20251126_arrays_blood_phewas/results/34505c4e9a_median_WBC_allchr.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+
+```
+
+```{r}
+
+wbc_3b4102e323 <- read.table("../20251126_arrays_blood_phewas/results/3b4102e323_median_WBC_allchr.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+
+```
+
+```{r}
+
+wbc_e9229326cc <- read.table("../20251126_arrays_blood_phewas/results/e9229326cc_median_WBC_allchr.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+
+```
+
+```{r}
+
+wbc_eaa8d6126d <- read.table("../20251126_arrays_blood_phewas/results/eaa8d6126d_median_WBC_allchr.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+
+```
+
+
+```{r}
+
+rbc_1c18651582 <- read.table("../20251126_arrays_blood_phewas/results/1c18651582_median_RBC_allchr.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+
+```
+
+```{r}
+
+rbc_34505c4e9a <- read.table("../20251126_arrays_blood_phewas/results/34505c4e9a_median_RBC_allchr.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+
+```
+
+```{r}
+
+rbc_3b4102e323 <- read.table("../20251126_arrays_blood_phewas/results/3b4102e323_median_RBC_allchr.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+
+```
+
+```{r}
+
+rbc_e9229326cc <- read.table("../20251126_arrays_blood_phewas/results/e9229326cc_median_RBC_allchr.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+
+```
+
+```{r}
+
+rbc_eaa8d6126d <- read.table("../20251126_arrays_blood_phewas/results/eaa8d6126d_median_RBC_allchr.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+
+```
+
+###############################################################################################
+# plot data
+###############################################################################################
+
+```{r}
+
+parts <- strsplit(as.character(wbc_meta$MarkerName), ":")
+wbc_meta$CHR <- sapply(parts, `[`, 1)
+wbc_meta$POS <- as.numeric(sapply(parts, `[`, 2))
+
+```
+
+```{r}
+
+wbc_meta$CHR <- as.numeric(wbc_meta$CHR)
+
+wbc_meta$POS <- as.numeric(wbc_meta$POS)
+
+```
+
+```{r}
+
+man_wbc  <- manhattan(wbc_meta,
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerName",
+          p = "P.value",
+          main = "Manhattan Plot: EUR Meta Median WBC")
+#          ylim = c(0, max(-log10(phe_751.12$p.value)) + 1))
+```
+
+
+```{r}
+
+parts <- strsplit(as.character(rbc_meta$MarkerName), ":")
+rbc_meta$CHR <- sapply(parts, `[`, 1)
+rbc_meta$POS <- as.numeric(sapply(parts, `[`, 2))
+
+```
+
+```{r}
+rbc_meta$CHR <- as.numeric(rbc_meta$CHR)
+
+rbc_meta$POS <- as.numeric(rbc_meta$POS)
+
+```
+
+```{r}
+
+man_rbc  <- manhattan(rbc_meta,
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerName",
+          p = "P.value",
+          main = "Manhattan Plot: EUR Meta Median RBC")
+#          ylim = c(0, max(-log10(phe_751.12$p.value)) + 1))
+```
+
+###############################################################################################
+# save meta results
+###############################################################################################
+
+```{r}
+
+wbc_meta_save <- wbc_meta[wbc_meta$P.value <= 5e-7,]
+
+rbc_meta_save <- rbc_meta[rbc_meta$P.value <= 5e-5,]
+
+```
+
+```{r}
+
+write.csv(wbc_meta_save, "wbc_meta_top.csv")
+
+write.csv(rbc_meta_save, "rbc_meta_top.csv") 
+
+```
+
+```{r}
+
+jpeg("WBC_median_meta_man.jpg", width = 8*300, height = 6*300, res = 300)
+manhattan(wbc_meta,
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerName",
+          p = "P.value",
+          main = "Manhattan Plot: EUR Meta Median WBC")
+dev.off()
+
+
+```
+
+```{r}
+
+chisq_medmwbc <- qchisq(1 - wbc_meta$P.value, 1)
+lambda_gc_medmwbc <- median(chisq_medmwbc) / qchisq(0.5, 1)
+lambda_gc_medmwbc
+
+
+```
+
+```{r}
+
+qq(wbc_meta$P.value, main = sprintf("EUR Meta Median WBC: EUR (λ = %.3f)", lambda_gc_medmwbc))
+
+
+```
+
+```{r}
+
+jpeg("WBC_median_meta_QQ.jpg", width = 1200, height = 1200, res = 150)
+qq(wbc_meta$P.value, main = sprintf("EUR Meta Median WBC: EUR (λ = %.3f)", lambda_gc_medmwbc))
+dev.off()
+
+
+```
+
+```{r}
+
+jpeg("RBC_median_meta_man.jpg", width = 8*300, height = 6*300, res = 300)
+  manhattan(rbc_meta,
+            chr = "CHR",
+            bp = "POS",
+            snp = "MarkerName",
+            p = "P.value",
+            main = "Manhattan Plot: EUR Meta Median RBC")
+dev.off()
+
+
+```
+
+```{r}
+
+chisq_medmrbc <- qchisq(1 - rbc_meta$P.value, 1)
+lambda_gc_medmrbc <- median(chisq_medmrbc) / qchisq(0.5, 1)
+lambda_gc_medmrbc
+
+
+```
+
+```{r}
+
+qq(rbc_meta$P.value, main = sprintf("EUR Meta Median RBC: EUR (λ = %.3f)", lambda_gc_medmrbc))
+
+
+```
+
+```{r}
+
+jpeg("RBC_median_meta_QQ.jpg", width = 1200, height = 1200, res = 150)
+qq(rbc_meta$P.value, main = sprintf("EUR Meta Median RBC: EUR (λ = %.3f)", lambda_gc_medmrbc))
+dev.off()
+
+
+```
+
+###############################################################################################
+# individual GWASs
+###############################################################################################
+
+```{r}
+
+plot_gwas_results <- function(df, y1, y2) {
+  # Ensure required packages are loaded
+  if(!requireNamespace("qqman", quietly = TRUE)) {
+    stop("Package 'qqman' is required. Please install it.")
+  }
+  
+  # Manhattan plot
+  man_file <- sprintf("%s_median_array_%s_man.jpg", y1, y2)
+  jpeg(man_file, width = 8*300, height = 6*300, res = 300)
+  qqman::manhattan(df,
+                   chr = "CHR",
+                   bp = "POS",
+                   snp = "MarkerID",
+                   p = "p.value",
+                   main = sprintf("Manhattan Plot: EUR Array %s Median %s", y2, y1))
+  dev.off()
+  
+  # Calculate lambda GC
+  chisq <- qchisq(1 - df$p.value, 1)
+  lambda_gc <- median(chisq) / qchisq(0.5, 1)
+  
+  # QQ plot
+  qq_file <- sprintf("%s_median_array_%s_QQ.jpg", y1, y2)
+  jpeg(qq_file, width = 1200, height = 1200, res = 150)
+  qqman::qq(df$p.value, main = sprintf("EUR Array %s Median %s: EUR (λ = %.3f)", y2, y1, lambda_gc))
+  dev.off()
+  
+  message("Plots saved: ", man_file, " and ", qq_file)
+  return(lambda_gc)
+}
+
+
+```
+
+```{r}
+plot_gwas_results(wbc_1c18651582, "WBC", "1c18651582")
+
+plot_gwas_results(wbc_34505c4e9a, "WBC", "34505c4e9a")
+
+plot_gwas_results(wbc_3b4102e323, "WBC", "3b4102e323")
+
+plot_gwas_results(wbc_e9229326cc, "WBC", "e9229326cc")
+
+plot_gwas_results(wbc_eaa8d6126d, "WBC", "eaa8d6126d")
+
+```
+
+```{r}
+
+plot_gwas_results(rbc_1c18651582, "RBC", "1c18651582")
+
+plot_gwas_results(rbc_34505c4e9a, "RBC", "34505c4e9a")
+
+plot_gwas_results(rbc_3b4102e323, "RBC", "3b4102e323")
+
+plot_gwas_results(rbc_e9229326cc, "RBC", "e9229326cc")
+
+plot_gwas_results(rbc_eaa8d6126d, "RBC", "eaa8d6126d")
+
+```
+
+```{r}
+
+chisq_test <- qchisq(1 - rbc_e9229326cc$p.value, 1)
+lambda_gc_test <- median(chisq_test) / qchisq(0.5, 1)
+lambda_gc_test
+
+```
+
+```{r}
+
+jpeg("y1_median_array_y2_man.jpg", width = 8*300, height = 6*300, res = 300)
+manhattan(df,
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerName",
+          p = "P.value",
+          main = "Manhattan Plot: EUR Array y2 y1")
+dev.off()
+
+
+chisq <- qchisq(1 - df$P.value, 1)
+lambda <- median(chisq) / qchisq(0.5, 1)
+
+
+
+jpeg("y1_median_array_y2_QQ.jpg", width = 1200, height = 1200, res = 150)
+qq(df$P.value, main = sprintf("EUR Array y2 Median y1: EUR (λ = %.3f)", lambda_gc_medmwbc))
+dev.off()
+
+jpeg("y1_median_array_y2_man.jpg", width = 8*300, height = 6*300, res = 300)
+  manhattan(df,
+            chr = "CHR",
+            bp = "POS",
+            snp = "MarkerName",
+            p = "P.value",
+            main = "Manhattan Plot: EUR Array y2 Median y1")
+dev.off()
+
+
+```
+
+```{r}
+
+
+
+```

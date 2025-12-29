@@ -1,0 +1,260 @@
+---
+title: "Phecodes excluding 1 case and rolled up"
+output: html_document
+date: "2025-11-03"
+---
+
+###############################################################################################
+# library
+###############################################################################################
+
+```{r}
+
+library(bigrquery)
+library(tidyverse)
+library(dplyr)
+library(devtools)
+library(data.table)
+
+```
+
+###############################################################################################
+# read in data
+###############################################################################################
+
+```{r}
+
+array_eur_total_phe_200 <- read.csv("../20251008_phewas_saige_pheno/eur_total_phe_200.csv")
+
+```
+
+```{r}
+
+phenos <- read.csv("../20250908_phenotypes_v2/phecodes_counts_by_indv.csv")
+
+phenos <- phenos[, -1]
+
+```
+
+```{r}
+
+tl_phenos <- read.csv("../20250908_phenotypes_v2/phecodes_counts_by_indv_top.csv")
+
+tl_phenos <- tl_phenos[, -1]
+
+```
+
+###############################################################################################
+# updated phenotype df
+###############################################################################################
+
+```{r}
+
+covar_df <- array_eur_total_phe_200[,c("biosample_id", "pat_id", "PC1", "PC2", "PC3", "PC4", "PC5", "PC6", "PC7", "PC8", "PC9", "PC10", "ancestry", "age" , "sex", "age_sqr", "array_3b4102e323", "array_eaa8d6126d", "array_34505c4e9a", "array_1c18651582", "array_e9229326cc")]
+
+```
+
+```{r}
+
+colnames(phenos) <- gsub("^X", "", names(phenos))
+
+colnames(phenos)[-1] <- paste0("phe_", colnames(phenos)[-1])
+
+```
+
+```{r}
+
+phenos[,-1] <- ifelse(phenos[,-1] >= 2, 1,
+                         ifelse(phenos[,-1] == 1, NA, 0))
+
+
+```
+
+```{r}
+
+phenos <- phenos[phenos$pat_id %in% covar_df$pat_id, ]
+
+```
+
+```{r find number of phenotypes per cutoff}
+
+col_sums_phe <- colSums(phenos[, -1], na.rm = TRUE)
+
+```
+
+> sum(col_sums >= 100)
+[1] 360
+
+> sum(col_sums >= 200)
+[1] 226
+
+```{r subset to 200 phecodes}
+
+cols_200_phe <- names(col_sums_phe[col_sums_phe >= 200])
+
+# Subset the data (keep pat_id + qualifying phecodes)
+phecodes_200_phe <- phenos[, c("pat_id", cols_200_phe)]
+
+```
+
+
+```{r}
+
+phecodes_200_phe <- left_join(phecodes_200_phe, covar_df, by = "pat_id")
+
+```
+
+```{r}
+
+writeLines(cols_200_phe, "phecodes_200_v2.txt")
+
+```
+
+```{r}
+
+cols_200_phe_lo <- cols_200_phe[grepl("\\.", cols_200_phe)]
+
+```
+
+```{r}
+
+writeLines(cols_200_phe_lo, "phecodes_200_v2_lo.txt")
+
+```
+
+```{r save rolled up pheno file in saige friendly format}
+
+write.table(phecodes_200_phe, 
+            file = "array_eur_total_phe_200_v2.tsv", 
+            sep = "\t", 
+            quote = FALSE, 
+            row.names = FALSE)
+
+
+```
+
+###############################################################################################
+# top level phenotype df
+###############################################################################################
+
+```{r}
+
+colnames(tl_phenos) <- gsub("^X", "", names(tl_phenos))
+
+colnames(tl_phenos)[-1] <- paste0("phe_", colnames(tl_phenos)[-1])
+
+```
+
+```{r}
+
+tl_phenos[,-1] <- ifelse(tl_phenos[,-1] >= 2, 1,
+                         ifelse(tl_phenos[,-1] == 1, NA, 0))
+
+
+```
+
+```{r}
+
+tl_phenos <- tl_phenos[tl_phenos$pat_id %in% covar_df$pat_id, ]
+
+```
+
+```{r find number of phenotypes per cutoff}
+
+col_sums_tl <- colSums(tl_phenos[, -1], na.rm = TRUE)
+
+```
+
+> sum(col_sums_tl >= 200)
+[1] 184
+> sum(col_sums_tl >= 100)
+[1] 238
+
+```{r subset to 200 phecodes}
+
+cols_200_tl <- names(col_sums_tl[col_sums_tl >= 200])
+
+# Subset the data (keep pat_id + qualifying phecodes)
+phecodes_200_tl <- tl_phenos[, c("pat_id", cols_200_tl)]
+
+```
+
+sum(col_sums_tl >= 200)
+[1] 184
+
+sum(col_sums_tl >= 100)
+[1] 238
+
+```{r}
+
+phecodes_200_tl <- left_join(phecodes_200_tl, covar_df, by = "pat_id")
+
+```
+
+```{r}
+
+writeLines(cols_200_tl, "phecodes_200_top.txt")
+
+```
+
+```{r save rolled up pheno file in saige friendly format}
+
+write.table(phecodes_200_tl, 
+            file = "array_eur_total_phe_200_top.tsv", 
+            sep = "\t", 
+            quote = FALSE, 
+            row.names = FALSE)
+
+
+```
+
+###############################################################################################
+# combine into one df
+###############################################################################################
+
+```{r}
+
+colnames(phecodes_200_tl)[-1] <- paste0("top_", colnames(phecodes_200_tl)[-1])
+
+```
+
+```{r}
+
+phecodes_cols_tl_2 <- paste0("top_", cols_200_tl)
+
+```
+
+```{r}
+
+phecodes_200_tl_merge <- phecodes_200_tl[,c("pat_id", phecodes_cols_tl_2)]
+
+```
+
+```{r}
+
+phecodes_200_total <- left_join(phecodes_200_phe, phecodes_200_tl_merge, by="pat_id")
+
+```
+
+```{r}
+
+pheno_list_total <- c(phecodes_cols_tl_2, cols_200_phe)
+
+```
+
+```{r}
+
+writeLines(pheno_list_total, "pheno_list_total_200.txt")
+
+```
+
+```{r save total pheno file in saige friendly format}
+
+write.table(phecodes_200_total, 
+            file = "array_eur_total_phe_200_comb.tsv", 
+            sep = "\t", 
+            quote = FALSE, 
+            row.names = FALSE)
+
+
+```

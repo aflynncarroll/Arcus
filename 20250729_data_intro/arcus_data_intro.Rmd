@@ -1,0 +1,250 @@
+---
+title: "Data_intro"
+output: html_document
+date: "2025-07-29"
+---
+
+
+```{r}
+
+library(bigrquery)
+library(tidyverse)
+library(dplyr)
+library(icd)
+
+```
+shared data/code:
+
+/mnt/arcus/lab/project/data/interim
+
+/mnt/arcus/lab/project/data/interim/afc/projects
+
+batch1/batch2 are the raw data
+  may be deleted soon
+
+```{r install icd package}
+
+library("remotes")
+
+remotes::install_github("jackwasey/icd")
+
+```
+
+```{r get table information}
+
+bq_auth()
+project_id <- bq_projects()[1]
+
+table_query = "select
+table_name, 
+table_title, 
+description 
+FROM 
+arcus.dd_table"
+
+dd_tables_df <- bq_table_download(bq_project_query(project_id, table_query))
+dd_tables_df$table_name
+view(dd_tables_df)
+
+```
+
+```{r individuals who have genotype data}
+
+indv_geno <- read.csv("/mnt/arcus/data/manifests/file_manifest.csv")
+
+```
+############################################
+
+# Extract the complete patient table
+
+```{r patient information}
+
+query_patient <- "
+SELECT
+  *
+FROM
+  arcus.patient
+"
+patient_df <- bq_project_query(project_id, query_patient) %>%
+  bq_table_download(bigint = "integer64") %>%
+  as_tibble()
+head(patient_df)
+
+```
+
+```{r encounter information}
+
+query_encounter <- "
+SELECT
+  *
+FROM
+  arcus.encounter
+"
+encounter_df <- bq_project_query(project_id, query_encounter) %>%
+  bq_table_download(bigint = "integer64") %>%
+  as_tibble()
+head(encounter_df)
+
+```
+
+```{r}
+
+View(encounter_df[,c("pat_id", "encounter_id", "effective_age")])
+
+```
+
+
+```{r encounter information}
+
+query_encounter_diagnosis <- "
+SELECT
+  *
+FROM
+  arcus.encounter_diagnosis
+"
+encounter_diagnosis_df <- bq_project_query(project_id, query_encounter_diagnosis) %>%
+  bq_table_download(bigint = "integer64") %>%
+  as_tibble()
+head(encounter_diagnosis_df)
+
+```
+
+```{r}
+
+
+query_encounter_adt <- "
+SELECT
+  *
+FROM
+  arcus.encounter_adt
+"
+encounter_adt_df <- bq_project_query(project_id, query_encounter_adt) %>%
+  bq_table_download(bigint = "integer64") %>%
+  as_tibble()
+head(encounter_adt_df)
+
+```
+
+```{r encounter information}
+
+query_diag_icd9 <- "
+SELECT
+  *
+FROM
+  arcus.diagnosis_icd9
+"
+diag_icd9_df <- bq_project_query(project_id, query_diag_icd9) %>%
+  bq_table_download(bigint = "integer64") %>%
+  as_tibble()
+head(diag_icd9_df)
+
+```
+
+```{r encounter information}
+
+query_diag_icd10 <- "
+SELECT
+  *
+FROM
+  arcus.diagnosis_icd10
+"
+diag_icd10_df <- bq_project_query(project_id, query_diag_icd10) %>%
+  bq_table_download(bigint = "integer64") %>%
+  as_tibble()
+head(diag_icd10_df)
+
+```
+
+```{r}
+
+diag_icd10_df$top_code <- sub("\\..*", "", diag_icd10_df$code)
+
+```
+
+- Relevant tables and their columns
+  - `arcus.patient`
+    - `pat_id`
+      - Patient ID used by Arcus; you'll need to match this with the `biosample_id` in the `file_manifest.csv` file to use it with our genotypes
+    - `sex`
+      - Patient's sex
+  - `arcus.encounter`
+    - `pat_id`
+    - `encounter_id`
+      - Encounter ID, this key will match the ID in other tables for information that describes this encounter
+    - `effective age`
+      - Age in days on the start date of an encounter
+  - `arcus.encounter_diagnosis`
+    - `pat_id`
+    - `encounter_id`
+    - `dx_id`
+      - Diagnosis ID used internally by Arcus
+  - `arcus.diagnosis_icd10`
+    - `dx_id`
+    - `code`
+      - ICD10 code for the diagnosis
+      - Autism codes: F84, F84.0, F84.1, F84.3, F84.5, F84.8, F84.9
+      - Intellectual disability: F70, F70.0, F70.1, F70.8, F70.9, F71, F71.0, F71.1, F71.8, F71.9, F72, F72.0, F72.1, F72.8, F72.9, F73, F73.0, F73.1, F73.8, F73.9, F78, F78.0, F78.1, F78.8, F78.9, F79, F79.0, F79.1, F79.8, F79.9
+  - `arcus.qform_answer`
+    - `pat_id`
+    - `encounter_id`
+    - `form_name`
+      - Name for the entire form/questionnaire, e.g. "WEL M-CHAT (MODIFIED CHECKLIST FOR AUTISM IN TODDLERS)"
+    - `quest_name`
+      - Name for a specific question, e.g. "WEL M-CHAT (1) DOES YOUR CHILD ENJOY BEING SWUNG,BOUNCED ON YOUR KNEE,ETC.?"
+    - `numeric_answer`
+      - A numerical code used internally by Arcus to encode answer
+  - `lab.dd_qform_answer`
+    - `form_name`
+    - `quest_name`
+    - `numeric_answer`
+    - `text_answer`
+      - The answer to the question, e.g. "Yes"
+- Relevant questionnaires and their `form_name`
+  - Adolescent Health Questionnaire: `WEL CN ADOLESCENT PROMPT`
+  - Adolescent Health Questionnaire: `WEL CN ADOLESCENT HEALTH QUESTIONNAIRE`
+  - CRAFFT Screening Questionnaire: `WEL CN ADOLESCENT HEALTH QUESTIONNAIRE-CRAFFT SCREEN`
+  - Pediatric Symptom Checklist: `NEURO WEL PSC 17 CHILD BRANCH`
+  - Pediatric Symptom Checklist (PSC): `PEDIATRIC SYMPTOM CHECKLIST (PSC)`
+  - Pediatric Symptom Checklist: `WEL PSC-17 (PEDIATRIC SYMPTOM CHECKLIST-17)`
+  - Patient Health Questionnaire - 9: `WEL PHQ-9 MODIFIED FOR TEENS (DO NOT SEND TO MYCHOP)`
+  - Modified Checklist for Autism in Toddlers (M-CHAT): `WEL M-CHAT (MODIFIED CHECKLIST FOR AUTISM IN TODDLERS)`
+  - M-CHAT-R: `WEL M-CHAT-R 2016 (MODIFIED CHECKLIST FOR AUTISM IN TODDLERS) (MAIN)`
+  - SWYC Family Questions: `WEL SWYC FAMILY QUESTIONS (MAIN)` SWYC Developmental Milestones: 24 Months (24): `WEL SWYC 24 MO QUESTIONNAIRE (24 MO BANK) FALL 2013`
+  - SWYC Developmental Milestones: 24 Months (25): `WEL SWYC 25 MO QUESTIONNAIRE (24 MO BANK) FALL 2013`
+  - SWYC Developmental Milestones: 24 Months (26): `WEL SWYC 26 MO QUESTIONNAIRE (24 MO BANK) FALL 2013`
+  - SWYC Developmental Milestones: 24 Months (27): `WEL SWYC 27 MO QUESTIONNAIRE (24 MO BANK) FALL 2013`
+  - SWYC Developmental Milestones: 24 Months (28): `WEL SWYC 28 MO QUESTIONNAIRE (24 MO BANK) FALL 2013`
+  - SWYC Developmental Milestones: 30 Months (29): `WEL SWYC 29 MO QUESTIONNAIRE (30 MO BANK) FALL 2013`
+  - SWYC Developmental Milestones: 30 Months (30): `WEL SWYC 30 MO QUESTIONNAIRE (30 MO BANK) FALL 2013`
+  - SWYC Developmental Milestones: 30 Months (31): `WEL SWYC 31 MO QUESTIONNAIRE (30 MO BANK) FALL 2013`
+  - SWYC Developmental Milestones: 30 Months (32): `WEL SWYC 32 MO QUESTIONNAIRE (30 MO BANK) FALL 2013`
+  - SWYC Developmental Milestones: 36 months (36): `WEL SWYC 36 MO QUESTIONNAIRE (36 MO BANK) FALL 2013`
+  - SWYC Baby Pediatric Symptoms Checklist (BPSC): `WEL SWYC BABY PEDIATRIC SYMPTOM CHECKLIST (BPSC) (MAIN)`
+  - SWYC Developmental Milestones: 4 months (4): `WEL SWYC 04 MO ADJ AGE QUESTIONNAIRE (4 MO BANK) FALL 2013`
+  - SWYC Developmental Milestones: 6 months (6): `WEL SWYC 06 MO ADJ AGE QUESTIONNAIRE (6 MO BANK) FALL 2013`
+  - SWYC Developmental Milestones: 6 months (8): `WEL SWYC 08 MO ADJ AGE QUESTIONNAIRE (6 MO BANK) FALL 2013`
+  - SWYC Developmental Milestones: 9 Months (9): `WEL SWYC 09 MO ADJ AGE QUESTIONNAIRE (9 MO BANK) FALL 2013`
+  - SWYC Developmental Milestones: 9 Month (10): `WEL SWYC 10 MO ADJ AGE QUESTIONNAIRE (9 MO BANK) FALL 2013`
+  - SWYC Developmental Milestones: 9 Month (11): `WEL SWYC 11 MO ADJ AGE QUESTIONNAIRE (9 MO BANK) FALL 2013`
+  - SWYC Developmental Milestones: 12 months (14): `WEL SWYC 14 MO ADJ AGE QUESTIONNAIRE (12 MO BANK) FALL 2013`
+  - SWYC Developmental Milestones: 15 Months (16): `WEL SWYC 16 MO ADJ AGE QUESTIONNAIRE (15 MO BANK) FALL 2013`
+  - SWYC Developmental Milestones: 15 Month (17): `WEL SWYC 17 MO ADJ AGE QUESTIONNAIRE (15 MO BANK) FALL 2013`
+  - SWYC Developmental Milestones: 18 Months (18): `WEL SWYC 18 MO ADJ AGE QUESTIONNAIRE (18 MO BANK) FALL 2013`
+  - SWYC Developmental Milestones: 18 Months (19): `WEL SWYC 19 MO ADJ AGE QUESTIONNAIRE (18 MO BANK) FALL 2013`
+  - SWYC Developmental Milestones: 18 Months (20): `WEL SWYC 20 MO ADJ AGE QUESTIONNAIRE (18 MO BANK) FALL 2013`
+  - SWYC Developmental Milestones: 18 Months (21): `WEL SWYC 21 MO ADJ AGE QUESTIONNAIRE (18 MO BANK) FALL 2013`
+  - SWYC Developmental Milestones: 18 Months (22): `WEL SWYC 22 MO ADJ AGE QUESTIONNAIRE (18 MO BANK) FALL 2013`
+  - SWYC Developmental Milestones: 24 Months (23): `WEL SWYC 23 MO ADJ AGE QUESTIONNAIRE (24 MO BANK) FALL 2013`
+  - SWYC Preschool Pediatric Symptom List (PPSC): `WEL SWYC PRESCHOOL PEDIATRIC SYMPTOM CHECKLIST (PPSC) (MAIN)`
+  - Survey of Well-being of Young Children: Developmental Milestones (9 months): `SWYC-09 MO AGE DEVELOPMENTAL MILESTONES-9 MO BANK (SURVEY OF WELL-BEING OF YOUNG CHILDREN V1.08)`
+  - Survey of Well-being of Young Children: Developmental Milestones (15 months): `SWYC-15 MO AGE DEVELOPMENTAL MILESTONES-15 MO BANK (SURVEY OF WELL-BEING OF YOUNG CHILDREN V1.08)`
+  - Survey of Well-being of Young Children: Developmental Milestones (18 months): `SWYC-18 MO AGE DEVELOPMENTAL MILESTONES-18 MO BANK (SURVEY OF WELL-BEING OF YOUNG CHILDREN V1.08)`
+  - Survey of Well-being of Young Children: Developmental Milestones (24 months): `SWYC-24 MO AGE DEVELOPMENTAL MILESTONES-24 MO BANK (SURVEY OF WELL-BEING OF YOUNG CHILDREN V1.08)`
+  - Survey of Well-being of Young Children: Developmental Milestones (26 months): `SWYC-26 MO AGE DEVELOPMENTAL MILESTONES-24 MO BANK (SURVEY OF WELL-BEING OF YOUNG CHILDREN V1.08)`
+  - SWYC Developmental Milestones: 30 months (34): `WEL SWYC 34 MO QUESTIONNAIRE (30 MO BANK) FALL 2013`
+  - SWYC Developmental Milestones: 12 months (12): `WEL SWYC 12 MO ADJ AGE QUESTIONNAIRE (12 MO BANK) FALL 2013`
+  - SWYC Developmental Milestones: 15 months (15): `WEL SWYC 15 MO ADJ AGE QUESTIONNAIRE (15 MO BANK) FALL 2013`
+  - Survey of Well-being of Young Children: Developmental Milestones (35 months): `SWYC-35 MO AGE DEVELOPMENTAL MILESTONES-36 MO BANK (SURVEY OF WELL-BEING OF YOUNG CHILDREN V1.08)`
+  - Survey of Well-being of Young Children: Developmental Milestones (60 months): `SWYC-60 MO AGE DEVELOPMENTAL MILESTONES-60 MO BANK (SURVEY OF WELL-BEING OF YOUNG CHILDREN V1.08)`
+  - Survey of Well-being of Young Children: Developmental Milestones (10 months): `SWYC-10 MO AGE DEVELOPMENTAL MILESTONES-9 MO BANK (SURVEY OF WELL-BEING OF YOUNG CHILDREN V1.08)`
+  - Survey of Well-being of Young Children: Developmental Milestones (19 months): `SWYC-19 MO AGE DEVELOPMENTAL MILESTONES-18 MO BANK (SURVEY OF WELL-BEING OF YOUNG CHILDREN V1.08)` Survey of Well-being of Young Children: Developmental Milestones (34 months): `SWYC-34 MO AGE DEVELOPMENTAL MILESTONES-30 MO BANK (SURVEY OF WELL-BEING OF YOUNG CHILDREN V1.08)` 

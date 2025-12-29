@@ -1,0 +1,260 @@
+---
+title: "Add blood disease status to model"
+author: "Alex Flynn-Carroll"
+date: "2025-11-24"
+output: html_document
+---
+
+###############################################################################################
+# library
+###############################################################################################
+
+```{r packages}
+
+library(bigrquery)
+library(tidyverse)
+library(dplyr)
+library(devtools)
+library(data.table)
+library(ggplot2)
+library(cowplot)
+
+```
+
+###############################################################################################
+# read in data
+###############################################################################################
+
+```{r blood phenos}
+
+blood_phenos <- read_tsv("/mnt/arcus/lab/users/flynncarra/projects/20250916_quantitative_measurements/rw_blood_phenos.tsv")
+
+```
+
+```{r}
+
+phenos <- read.csv("../20250908_phenotypes_v2/phecodes_counts_by_indv.csv")
+
+phenos <- phenos[, -1]
+
+```
+
+```{r icd to phecode map}
+
+phecode_map <- read.csv("../20250801_arcus_phenotype_counts/Phecode_map_v1_2_icd9_icd10cm.csv")
+
+```
+
+```{r}
+
+tl_phenos <- read.csv("../20250908_phenotypes_v2/phecodes_counts_by_indv_top.csv")
+
+tl_phenos <- tl_phenos[, -1]
+
+```
+
+```{r}
+
+cat_pheno_file <- read_tsv("/mnt/arcus/lab/users/flynncarra/projects/20251103_phewas_v3_phenotypes/array_eur_total_phe_200_v2.tsv")
+
+```
+
+###############################################################################################
+# get blood diagnoses of interest
+###############################################################################################
+
+```{r}
+
+icd9_bd <- c(280, 281, 282, 283, 284, 285, 286, 287,288, 289)
+
+phecode_map <- phecode_map[phecode_map$Flag == 9 & phecode_map$ICD %in% icd9_bd,]
+
+```
+They are all the same number as phecodes
+
+```{r}
+
+phe_bd <- c("pat_id", "X280", "X281", "X282", "X283", "X284", "X285", "X286", "X287","X288", "X289")
+
+```
+
+```{r}
+
+tl_blood <- tl_phenos[, colnames(tl_phenos) %in% phe_bd]
+
+```
+
+```{r code diagnoses of blood traits}
+
+
+tl_blood[,-1] <- ifelse(tl_blood[,-1] >= 2, 1,
+                         ifelse(tl_blood[,-1] == 1, NA, 0))
+
+
+```
+
+hematological disease status
+
+```{r}
+
+tl_blood$HDS <- as.integer(rowSums(tl_blood[ , -1] == 1, na.rm = TRUE) > 0)
+
+
+```
+
+###############################################################################################
+# add to blood df
+###############################################################################################
+
+```{r}
+
+blood_phenos <- left_join(blood_phenos, tl_blood[,c("pat_id", "HDS")], by = "pat_id")
+
+```
+
+###############################################################################################
+# add arrays
+###############################################################################################
+
+```{r}
+
+cat_pheno_file <- cat_pheno_file[,c("pat_id", "array_3b4102e323", "array_eaa8d6126d", "array_34505c4e9a", "array_1c18651582", "array_e9229326cc")]
+
+```
+
+```{r}
+
+blood_phenos <- left_join(blood_phenos, cat_pheno_file, by = "pat_id")
+
+```
+
+```{r save total pheno file in saige friendly format}
+
+write.table(blood_phenos, 
+            file = "rw_blood_phenos.tsv", 
+            sep = "\t", 
+            quote = FALSE, 
+            row.names = FALSE)
+
+
+```
+
+###############################################################################################
+# plot histograms
+###############################################################################################
+
+```{r}
+
+# Vector of array columns
+array_cols <- c("array_3b4102e323",
+                "array_eaa8d6126d",
+                "array_34505c4e9a",
+                "array_1c18651582",
+                "array_e9229326cc")
+
+# Reshape into long format:
+df_long <- blood_phenos %>%
+  select(median_WBC, all_of(array_cols)) %>%
+  pivot_longer(cols = all_of(array_cols),
+               names_to = "array",
+               values_to = "is_present") %>%
+  filter(is_present == 1)
+
+# Plot
+wbc_plot <- ggplot(df_long, aes(x = median_WBC, fill = array)) +
+  geom_histogram(alpha = 0.4, position = "identity", bins = 40) +
+  theme_minimal() +
+  labs(title = "Distribution of median_WBC by Array",
+       x = "median_WBC",
+       y = "Count",
+       fill = "Array") +
+  theme(text = element_text(size = 14))
+
+ggsave("median_WBC_by_array_histograms.png", wbc_plot, width = 10, height = 7, dpi = 300)
+
+```
+
+```{r}
+
+
+array_cols <- c("array_3b4102e323",
+                "array_eaa8d6126d",
+                "array_34505c4e9a",
+                "array_1c18651582",
+                "array_e9229326cc")
+
+summary_table <- lapply(array_cols, function(col) {
+  tmp <- blood_phenos %>% filter(.data[[col]] == 1)
+
+  data.frame(
+    array = col,
+    n = nrow(tmp),
+    mean_WBC = mean(tmp$median_WBC, na.rm = TRUE),
+    median_WBC = median(tmp$median_WBC, na.rm = TRUE)
+  )
+}) %>%
+  bind_rows()
+
+summary_table
+
+
+```
+
+```{r}
+
+write.csv(summary_table,
+          "median_WBC_array_summary_table.csv",
+          row.names = FALSE)
+
+
+```
+
+```{r}
+
+# Reshape into long format for ggplot
+plot_df_2 <- blood_phenos %>%
+  select(median_RBC, all_of(array_cols)) %>%
+  pivot_longer(cols = all_of(array_cols),
+               names_to = "array",
+               values_to = "indicator") %>%
+  filter(indicator == 1)   # keep only samples on the array
+
+# Histogram overlay
+p <- ggplot(plot_df_2, aes(x = median_RBC, fill = array)) +
+  geom_histogram(alpha = 0.5, position = "identity", bins = 40) +
+  labs(title = "Distribution of Median RBC by Array",
+       x = "median_RBC",
+       y = "Count",
+       fill = "Array") +
+  theme_minimal()
+
+# Save plot
+ggsave("median_RBC_by_array_histograms.png", p, width = 10, height = 7, dpi = 300)
+
+```
+
+```{r}
+
+summary_table_RBC <- lapply(array_cols, function(col) {
+  tmp <- blood_phenos %>% filter(.data[[col]] == 1)
+
+  data.frame(
+    array = col,
+    n = nrow(tmp),
+    mean_RBC = mean(tmp$median_RBC, na.rm = TRUE),
+    median_RBC = median(tmp$median_RBC, na.rm = TRUE)
+  )
+}) %>% bind_rows()
+
+summary_table_RBC
+
+```
+
+```{r}
+
+write.csv(summary_table_RBC,
+          "median_RBC_array_summary_table.csv",
+          row.names = FALSE)
+
+
+```

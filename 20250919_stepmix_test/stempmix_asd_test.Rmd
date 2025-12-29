@@ -1,0 +1,191 @@
+---
+title: "stepmix test"
+output: html_document
+date: "2025-09-19"
+---
+
+###############################################################################################
+# library
+###############################################################################################
+
+```{r packages}
+
+library(bigrquery)
+library(tidyverse)
+library(dplyr)
+library(devtools)
+library(data.table)
+library(ggplot2)
+library(cowplot)
+library(stepmixr)
+
+library(reticulate)
+
+```
+
+###############################################################################################
+# read in data
+###############################################################################################
+                 
+```{r read phenotypes}
+
+phecodes_binary <- read.csv( "../20250908_phenotypes_v2/phecodes_binary_by_indv.csv")
+
+```
+
+```{r}
+
+phecodes_binary <- subset(phecodes_binary, select = -X)
+
+```
+
+```{r read asd list}
+
+asd_indv <- read.csv("../20250908_phenotypes_v2/asd_indv.csv")
+
+asd_indv <- asd_indv$x
+
+```
+
+###############################################################################################
+# subset the data
+###############################################################################################
+
+```{r}
+
+phecodes_binary_asd <- phecodes_binary[phecodes_binary$pat_id %in% asd_indv, ]
+
+```
+
+###############################################################################################
+# read in data
+###############################################################################################
+
+```{r}
+
+# IDs
+ids <- phecodes_binary_asd$pat_id
+
+# no covariates right now
+#covariates <- df[, c("sex", "age")]  # adjust names as applicable
+
+
+
+model <- stepmix(
+  n_components = 4,        # e.g. try 3 latent classes; you can change
+  n_steps = 1,              # 1-step estimation
+  measurement = "bernoulli", # or "binary"
+  structural = "covariate",  # or "none"/NULL if no covariate
+  verbose = 1
+)
+
+```
+
+```{r}
+
+phe_run <- phecodes_binary_asd[, !(names(phecodes_binary_asd) %in% "pat_id")]
+
+
+```
+
+```{r}
+
+# Fit the model
+fit_model <- fit(model, phe_run)  
+# If no covariates, you may omit the Y= or set structural= NULL and just fit(measurement_data)
+
+
+```
+
+```{r}
+
+# Get predicted class membership
+# can have y = covariates
+pred <- predict(fit_model, phe_run)
+
+```
+
+```{r}
+
+indv_pred <- as.data.frame(ids)
+# Add predictions back
+indv_pred$latent_class <- pred  # or however the labels are returned
+
+# Save or inspect
+# e.g.,
+table(indv_pred$latent_class)
+
+```
+
+```{r}
+
+phecodes_binary_result <- phecodes_binary_asd
+
+phecodes_binary_result$latent_class <- pred
+  
+```
+
+```{r}
+
+phenotype_columns <- setdiff(names(phecodes_binary_result), c("pat_id", "latent_class"))
+
+# Get prevalence per class
+prevalence_by_class <- phecodes_binary_result %>%
+  group_by(latent_class) %>%
+  summarise(across(all_of(phenotype_columns), ~ mean(.x, na.rm = TRUE))) %>%
+  as.data.frame()
+
+prevalence_by_class
+
+
+```
+
+```{r}
+
+phenotype_columns <- setdiff(names(phecodes_binary_result), c("pat_id", "latent_class"))
+
+classes <- sort(unique(phecodes_binary_result$latent_class))
+
+enrichment_list <- list()
+
+for (cls in classes) {
+  # Create a binary vector: 1 = in this class, 0 = all others
+  phecodes_binary_result$class_vs_rest <- ifelse(phecodes_binary_result$latent_class == cls, 1, 0)
+  
+  for (phen in phenotype_columns) {
+    tab <- table(
+      phecodes_binary_result$class_vs_rest,
+      phecodes_binary_result[[phen]]
+    )
+    
+    if (nrow(tab) >= 2 && ncol(tab) >= 2) {
+      cs <- suppressWarnings(chisq.test(tab, correct = FALSE))
+      # Calculate fold enrichment
+      prevalence_cls <- mean(phecodes_binary_result[[phen]][phecodes_binary_result$class_vs_rest==1], na.rm=TRUE)
+      prevalence_rest <- mean(phecodes_binary_result[[phen]][phecodes_binary_result$class_vs_rest==0], na.rm=TRUE)
+      fold_enrich <- prevalence_cls / prevalence_rest
+      
+      enrichment_list[[length(enrichment_list)+1]] <- data.frame(
+        class = cls,
+        phenotype = phen,
+        p_value = cs$p.value,
+        fold_enrichment = fold_enrich,
+        prevalence_class = prevalence_cls,
+        prevalence_rest = prevalence_rest,
+        stringsAsFactors = FALSE
+      )
+    }
+  }
+}
+
+enrichment_df <- do.call(rbind, enrichment_list)
+
+# Adjust FDR per phenotype per class
+enrichment_df <- enrichment_df %>%
+  group_by(class) %>%
+  mutate(FDR = p.adjust(p_value, method="fdr")) %>%
+  ungroup()
+
+
+
+```

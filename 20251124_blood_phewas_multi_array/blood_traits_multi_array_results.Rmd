@@ -1,0 +1,348 @@
+---
+title: "Look at results from multi array blood phenos"
+author: "Alex Flynn-Carroll"
+date: "2025-11-24"
+output: html_document
+---
+
+
+
+
+###############################################################################################
+# library
+###############################################################################################
+
+```{r packages}
+
+library(tidyverse)
+library(dplyr)
+library(data.table)
+library(ggplot2)
+library(qqman)
+library(PheWAS)
+library(jpeg)
+library(wesanderson)
+library(ggrepel)
+library(circlize)
+
+```
+20251124_blood_phewas_updated_covar
+###############################################################################################
+# read in data
+###############################################################################################
+
+```{r}
+
+max_rbc <- read.table("/home/flynncarra/projects/20251124_blood_phewas_multi_array/results/max_RBC_allchr.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+
+```
+
+```{r}
+
+mean_rbc <- read.table("/home/flynncarra/projects/20251124_blood_phewas_multi_array/results/mean_RBC_allchr.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+mean_rbc$phenotype <- "mean RBC"
+```
+
+```{r}
+
+median_rbc <- read.table("/home/flynncarra/projects/20251124_blood_phewas_multi_array/results/median_RBC_allchr.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+
+```
+
+```{r}
+
+min_rbc <- read.table("/home/flynncarra/projects/20251124_blood_phewas_multi_array/results/min_RBC_allchr.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+
+```
+
+```{r}
+
+max_wbc <- read.table("/home/flynncarra/projects/20251124_blood_phewas_multi_array/results/max_WBC_allchr.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+
+```
+
+```{r}
+
+mean_wbc <- read.table("/home/flynncarra/projects/20251124_blood_phewas_multi_array/results/mean_WBC_allchr.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+
+```
+
+```{r}
+
+median_wbc <- read.table("/home/flynncarra/projects/20251124_blood_phewas_multi_array/results/median_WBC_allchr.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+
+```
+
+```{r}
+
+min_wbc <- read.table("/home/flynncarra/projects/20251124_blood_phewas_multi_array/results/min_WBC_allchr.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+
+```
+
+```{r icd to phecode map}
+
+phecode_map <- read.csv("../20250801_arcus_phenotype_counts/Phecode_map_v1_2_icd9_icd10cm.csv")
+
+```
+
+###############################################################################################
+# Phecodes
+###############################################################################################
+
+```{r unique phecode descriptions}
+
+phecodes <- unique(phecode_map[,c("Phecode", "PhecodeString")])
+
+phecodes <- phecodes %>%
+  group_by(Phecode) %>%
+  summarise(
+    PhecodeString = paste(unique(PhecodeString), collapse = "; "),
+    .groups = "drop"
+  )
+
+colnames(phecodes) <- c("phecode", "PhecodeString")
+
+phecodes$phecode <- as.character(phecodes$phecode)
+
+```
+
+###############################################################################################
+# manhattan plots
+###############################################################################################
+
+```{r}
+
+man_mean_rbc  <- manhattan(mean_rbc,
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerID",
+          p = "p.value",
+          main = "Manhattan Plot: EUR Mean RBC")
+#          ylim = c(0, max(-log10(phe_751.12$p.value)) + 1))
+```
+
+```{r}
+
+chisq_mean_rbc <- qchisq(1 - mean_rbc$p.value, 1)
+lambda_gc_mean_rbc <- median(chisq_mean_rbc) / qchisq(0.5, 1)
+lambda_gc_mean_rbc
+
+
+```
+
+```{r}
+
+qq(mean_rbc$p.value, main = sprintf("Mean RBC: EUR (λ = %.3f)", lambda_gc_mean_rbc))
+
+
+```
+
+```{r}
+
+man_median_rbc  <- manhattan(median_rbc,
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerID",
+          p = "p.value",
+          main = "Manhattan Plot: EUR Median RBC")
+#          ylim = c(0, max(-log10(phe_751.12$p.value)) + 1))
+```
+
+```{r}
+
+man_max_rbc  <- manhattan(max_rbc,
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerID",
+          p = "p.value",
+          main = "Manhattan Plot: EUR Max RBC")
+#          ylim = c(0, max(-log10(phe_751.12$p.value)) + 1))
+```
+
+```{r}
+
+man_min_rbc  <- manhattan(min_rbc,
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerID",
+          p = "p.value",
+          main = "Manhattan Plot: EUR Min RBC")
+#          ylim = c(0, max(-log10(phe_751.12$p.value)) + 1))
+```
+
+
+```{r}
+
+man_mean_wbc  <- manhattan(mean_wbc,
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerID",
+          p = "p.value",
+          main = "Manhattan Plot: EUR Mean WBC")
+#          ylim = c(0, max(-log10(phe_751.12$p.value)) + 1))
+```
+
+```{r}
+
+man_max_wbc  <- manhattan(max_wbc,
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerID",
+          p = "p.value",
+          main = "Manhattan Plot: EUR Max WBC")
+#          ylim = c(0, max(-log10(phe_751.12$p.value)) + 1))
+```
+
+```{r}
+
+man_min_wbc  <- manhattan(min_wbc,
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerID",
+          p = "p.value",
+          main = "Manhattan Plot: EUR Min WBC")
+#          ylim = c(0, max(-log10(phe_751.12$p.value)) + 1))
+```
+
+```{r}
+
+man_median_wbc  <- manhattan(median_wbc,
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerID",
+          p = "p.value",
+          main = "Manhattan Plot: EUR Median WBC")
+#          ylim = c(0, max(-log10(phe_751.12$p.value)) + 1))
+```
+
+###############################################################################################
+# save files
+###############################################################################################
+
+```{r}
+
+jpeg("RBC_median_man.jpg", width = 8*300, height = 6*300, res = 300)
+manhattan(median_rbc,
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerID",
+          p = "p.value",
+          main = "EUR Median RBC")
+dev.off()
+
+
+```
+
+```{r}
+
+chisq_medrbc <- qchisq(1 - median_rbc$p.value, 1)
+lambda_gc_medrbc <- median(chisq_medrbc) / qchisq(0.5, 1)
+lambda_gc_medrbc
+
+
+```
+
+```{r}
+
+qq(median_rbc$p.value, main = sprintf("EUR Median RBC: EUR (λ = %.3f)", lambda_gc_medrbc))
+
+
+```
+
+```{r}
+
+jpeg("RBC_median_QQ.jpg", width = 1200, height = 1200, res = 150)
+qq(median_rbc$p.value, main = sprintf("EUR Median RBC: EUR (λ = %.3f)", lambda_gc_medrbc))
+dev.off()
+
+
+```
+
+```{r}
+
+top_hits_rbc <- median_rbc[median_rbc$p.value<=5e-5,]
+
+
+```
+
+```{r}
+
+top_hits_rbc <- top_hits_rbc[,c("MarkerID", "AF_Allele2", "BETA", "SE", "p.value", "N")]
+
+```
+
+```{r}
+
+write_csv(top_hits_rbc, "RBC_median_top_hits.csv")
+
+```
+
+
+
+
+
+
+```{r}
+
+jpeg("WBC_median_man.jpg", width = 8*300, height = 6*300, res = 300)
+manhattan(median_wbc,
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerID",
+          p = "p.value",
+          main = "EUR Median WBC")
+dev.off()
+
+
+```
+
+```{r}
+
+chisq_medwbc <- qchisq(1 - median_wbc$p.value, 1)
+lambda_gc_medwbc <- median(chisq_medwbc) / qchisq(0.5, 1)
+lambda_gc_medwbc
+
+```
+
+```{r}
+
+qq(median_wbc$p.value, main = sprintf("EUR Median WBC: EUR (λ = %.3f)", lambda_gc_medwbc))
+
+
+```
+
+```{r}
+
+jpeg("WBC_median_QQ.jpg", width = 1200, height = 1200, res = 150)
+qq(median_wbc$p.value, main = sprintf("EUR Median WBC: EUR (λ = %.3f)", lambda_gc_medwbc))
+dev.off()
+
+
+```
+
+```{r}
+
+top_hits_wbc <- median_wbc[median_wbc$p.value<=5e-6,]
+
+
+```
+
+```{r}
+
+top_hits_wbc <- top_hits_wbc[,c("MarkerID", "AF_Allele2", "BETA", "SE", "p.value", "N")]
+
+```
+
+```{r}
+
+write_csv(top_hits_wbc, "WBC_median_top_hits.csv")
+
+```

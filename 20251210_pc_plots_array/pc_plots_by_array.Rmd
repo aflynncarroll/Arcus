@@ -1,0 +1,754 @@
+---
+title: "PC plot by Array"
+author: "Alex Flynn-Carroll"
+date: "2025-12-10"
+output: html_document
+---
+
+############################################################################################
+# library
+############################################################################################
+
+```{r}
+
+library(dplyr)
+library(ggplot2)
+library(scales)
+library(cowplot)
+library(bigstatsr)
+library(grid)      
+
+```
+
+############################################################################################
+# load data
+############################################################################################
+
+# there are duplicate individuals across the arrays
+```{r read pc df}
+
+pcs <- read.delim("../20251008_phewas_saige_pheno/atlas-onekg-pcs-ancestry.tsv", 
+                 header = TRUE, 
+                 stringsAsFactors = FALSE)
+
+```
+
+```{r get vcf individuals}
+
+b1_s1 <- read.delim("/mnt/arcus/lab/project/data/interim/batch1/samples_3b4102e323.txt", 
+                 header = F, 
+                 stringsAsFactors = FALSE)
+
+b1_s2 <- read.delim("/mnt/arcus/lab/project/data/interim/batch1/samples_eaa8d6126d.txt", 
+                 header = F, 
+                 stringsAsFactors = FALSE)
+
+b1_s3 <- read.delim("/mnt/arcus/lab/project/data/interim/batch1/samples_34505c4e9a.txt", 
+                 header = F, 
+                 stringsAsFactors = FALSE)
+
+b2_s1 <- read.delim("/mnt/arcus/lab/project/data/interim/batch2/samples_1c18651582.txt", 
+                 header = F, 
+                 stringsAsFactors = FALSE)
+
+b2_s2 <- read.delim("/mnt/arcus/lab/project/data/interim/batch2/samples_e9229326cc.txt", 
+                 header = F, 
+                 stringsAsFactors = FALSE)
+
+```
+
+############################################################################################
+# PCA plots
+############################################################################################
+
+```{r}
+
+lists <- list(
+  array_3b4102e323 = b1_s1$V1,
+  array_eaa8d6126d = b1_s2$V1,
+  array_34505c4e9a = b1_s3$V1,
+  array_1c18651582 = b2_s1$V1,
+  array_e9229326cc = b2_s2$V1
+)
+
+
+
+```
+
+```{r}
+
+pairwise_overlap <- outer(
+  names(lists),
+  names(lists),
+  Vectorize(function(x, y) {
+    length(intersect(lists[[x]], lists[[y]]))
+  })
+)
+
+pairwise_overlap
+
+
+```
+
+```{r}
+
+pcs$b1_s1 <- as.integer(pcs$IID %in% b1_s1$V1)
+pcs$b1_s2 <- as.integer(pcs$IID %in% b1_s2$V1)
+pcs$b1_s3 <- as.integer(pcs$IID %in% b1_s3$V1)
+pcs$b2_s1 <- as.integer(pcs$IID %in% b2_s1$V1)
+pcs$b2_s2 <- as.integer(pcs$IID %in% b2_s2$V1)
+
+
+```
+
+############################################################################################
+# PCA plots
+############################################################################################
+
+
+
+
+```{r Subset PC results to final ACE}
+
+pcs_df_2 <- pcs_df_2[(pcs_df_2$data != "ACE") | (pcs_df_2$data == "ACE" & pcs_df_2$IID %in% ace_grant_run$sp_id), ]
+
+```
+
+```{r Set plot options}
+
+plot_list <- list()
+
+# Define the colors 
+color <- c("EAS" = alpha("#B5E48C", 1),  
+           "AMR" = alpha("#F79661", 1), 
+           "SAS" = alpha("#815ac0", 1), 
+           "EUR" = alpha("#6183C2", 1), 
+           "AFR" = alpha("#C46363", 1), 
+           "Unclassified" = alpha("black", 0.2))  # Black outline for ACE
+
+# Define shapes 
+shape <- c("EAS" = 16,  
+           "AMR" = 16, 
+           "SAS" = 16, 
+           "EUR" = 16, 
+           "AFR" = 16, 
+           "Unclassified" = 16)  # Empty circle with outline for ACE
+
+# Define size 
+size <- c("EAS" = .5,  
+          "AMR" = .5, 
+          "SAS" = .5, 
+          "EUR" = .5, 
+          "AFR" = .5, 
+          "Unclassified" = .5)  # Smaller size for ACE
+
+```
+
+#### 3b4102e323
+
+```{r Make Plots}
+
+plot_list[[1]] <- ggplot(pcs[pcs$b1_s1 ==1,], aes_string(x = paste0('PC', 1), y = paste0('PC', 2), color = "ancestry", shape = "ancestry")) +
+        geom_point(aes(size =  "default"), fill = NA, show.legend = TRUE) +
+        theme_bigstatsr(0.6) + 
+        scale_colour_manual(values = color) + 
+        scale_shape_manual(values = shape) +
+        scale_size_manual(values = c(ACE = 0.5, default = .5), guide = FALSE) +  # Remove size from legend
+        xlim(-130,150) +
+        ylim(-140,140) +
+        labs(x = paste0("PC", 1), y = paste0("PC", 2), color = "GIA", shape = "GIA") +
+        coord_equal() +
+        theme(
+          plot.title = element_text(hjust = 0.5, size = 10),  # Title size
+          axis.title.x = element_text(size = 8),  # X axis title size
+          axis.title.y = element_text(size = 8),  # Y axis title size
+          axis.text.x = element_text(size = 6),  # X axis text size
+          axis.text.y = element_text(size = 6),  # Y axis text size
+          legend.title = element_text(size = 8),  # Legend title size
+          legend.text = element_text(size = 6),  # Legend text size
+          plot.margin = unit(rep(0.1, 4), "in"),  # Set plot margins
+          panel.grid.major = element_blank(),  # Remove major grid lines
+          panel.grid.minor = element_blank()   # Remove minor grid lines
+        )
+
+
+plot_list[[2]] <- ggplot(pcs[pcs$b1_s1 ==1,], aes_string(x = paste0('PC', 2), y = paste0('PC', 3), color = "ancestry", shape = "ancestry")) +
+        geom_point(aes(size = "default"), fill = NA, show.legend = F)  +
+        theme_bigstatsr(0.6) + 
+        scale_colour_manual(values = color) + 
+        scale_shape_manual(values = shape) +
+        scale_size_manual(values = c(ACE = 0.5, default = .5), guide = FALSE) + 
+        xlim(-100,110) +
+        ylim(-100,110) +
+        labs(x = paste0("PC", 2), y = paste0("PC", 3), color = "GIA", shape = "GIA") +
+        coord_equal() +
+        theme(
+          plot.title = element_text(hjust = 0.5, size = 10),  # Title size
+          axis.title.x = element_text(size = 8),  # X axis title size
+          axis.title.y = element_text(size = 8),  # Y axis title size
+          axis.text.x = element_text(size = 6),  # X axis text size
+          axis.text.y = element_text(size = 6),  # Y axis text size
+          legend.title = element_text(size = 8),  # Legend title size
+          legend.text = element_text(size = 6),  # Legend text size
+          plot.margin = unit(rep(0.1, 4), "in"),  # Set plot margins
+          panel.grid.major = element_blank(),  # Remove major grid lines
+          panel.grid.minor = element_blank() 
+        )
+
+plot_list[[3]] <- ggplot(pcs[pcs$b1_s1 ==1,], aes_string(x = paste0('PC', 3), y = paste0('PC', 4), color = "ancestry", shape = "ancestry")) +
+        geom_point(aes(size = "default"), fill = NA, show.legend = F) +
+        theme_bigstatsr(0.6) + 
+        scale_colour_manual(values = color) + 
+        scale_shape_manual(values = shape) +
+        scale_size_manual(values = c(ACE = 0.5, default = .5), guide = FALSE) + 
+        xlim(-100,120) +
+        ylim(-100,120) +
+        labs(x = paste0("PC", 3), y = paste0("PC", 4), color = "GIA", shape = "GIA") +
+        coord_equal() +
+        theme(
+          plot.title = element_text(hjust = 0.5, size = 10),  # Title size
+          axis.title.x = element_text(size = 8),  # X axis title size
+          axis.title.y = element_text(size = 8),  # Y axis title size
+          axis.text.x = element_text(size = 6),  # X axis text size
+          axis.text.y = element_text(size = 6),  # Y axis text size
+          legend.title = element_text(size = 8),  # Legend title size
+          legend.text = element_text(size = 6),  # Legend text size
+          plot.margin = unit(rep(0.1, 4), "in"),  # Set plot margins
+          panel.grid.major = element_blank(),  # Remove major grid lines
+          panel.grid.minor = element_blank() 
+        )
+
+plot_list[[4]] <- ggplot(pcs[pcs$b1_s1 ==1,], aes_string(x = paste0('PC', 1), y = paste0('PC', 10), color = "ancestry", shape = "ancestry")) +
+        geom_point(aes(size = "default"), fill = NA, show.legend = F) +
+        theme_bigstatsr(0.6) + 
+        scale_colour_manual(values = color) + 
+        scale_shape_manual(values = shape) +
+        scale_size_manual(values = c(ACE = 0.5, default = .5), guide = FALSE) + 
+        xlim(-50,150) +
+        ylim(-100,100) +
+        labs(x = paste0("PC", 1), y = paste0("PC", 10), color = "GIA", shape = "GIA") +
+        coord_equal() +
+        theme(
+          plot.title = element_text(hjust = 0.5, size = 10),  # Title size
+          axis.title.x = element_text(size = 8),  # X axis title size
+          axis.title.y = element_text(size = 8),  # Y axis title size
+          axis.text.x = element_text(size = 6),  # X axis text size
+          axis.text.y = element_text(size = 6),  # Y axis text size
+          legend.title = element_text(size = 8),  # Legend title size
+          legend.text = element_text(size = 6),  # Legend text size
+          plot.margin = unit(rep(0.1, 4), "in"),  # Set plot margins
+          panel.grid.major = element_blank(),  # Remove major grid lines
+          panel.grid.minor = element_blank() 
+        )
+
+# Extract the legend from the first plot
+legend <- get_legend(plot_list[[1]])
+
+# Remove legends from all individual plots
+plot_list <- lapply(plot_list, function(plot) plot + theme(legend.position = "none"))
+
+# Combine the plots and add the legend on the right
+plot_onekg_ancestry <- plot_grid(
+  plot_grid(plotlist = plot_list, nrow = 1),
+  legend,
+  rel_widths = c(3, 0.4)
+)
+
+```
+
+```{r Save ACE PCA plot }
+
+#ggsave('20250811_array_3b4102e323.pdf', plot_onekg_ancestry_2, width = 8.2, height = 2.25, units = "in")
+
+ggsave('20251210_array_3b4102e323.jpg', plot_onekg_ancestry, width = 8.2, height = 2.25, units = "in")
+
+
+```
+
+# eaa8d6126d
+
+```{r Make Plots}
+
+plot_list_2 <- list()
+
+plot_list_2[[1]] <- ggplot(pcs[pcs$b1_s2 ==1,], aes_string(x = paste0('PC', 1), y = paste0('PC', 2), color = "ancestry", shape = "ancestry")) +
+        geom_point(aes(size =  "default"), fill = NA, show.legend = TRUE) +
+        theme_bigstatsr(0.6) + 
+        scale_colour_manual(values = color) + 
+        scale_shape_manual(values = shape) +
+        scale_size_manual(values = c(ACE = 0.5, default = 0.5), guide = FALSE) +  # Remove size from legend
+        xlim(-130,150) +
+        ylim(-140,140) +
+        labs(x = paste0("PC", 1), y = paste0("PC", 2), color = "GIA", shape = "GIA") +
+        coord_equal() +
+        theme(
+          plot.title = element_text(hjust = 0.5, size = 10),  # Title size
+          axis.title.x = element_text(size = 8),  # X axis title size
+          axis.title.y = element_text(size = 8),  # Y axis title size
+          axis.text.x = element_text(size = 6),  # X axis text size
+          axis.text.y = element_text(size = 6),  # Y axis text size
+          legend.title = element_text(size = 8),  # Legend title size
+          legend.text = element_text(size = 6),  # Legend text size
+          plot.margin = unit(rep(0.1, 4), "in"),  # Set plot margins
+          panel.grid.major = element_blank(),  # Remove major grid lines
+          panel.grid.minor = element_blank()   # Remove minor grid lines
+        )
+
+
+plot_list_2[[2]] <- ggplot(pcs[pcs$b1_s2 ==1,], aes_string(x = paste0('PC', 2), y = paste0('PC', 3), color = "ancestry", shape = "ancestry")) +
+        geom_point(aes(size = "default"), fill = NA, show.legend = F)  +
+        theme_bigstatsr(0.6) + 
+        scale_colour_manual(values = color) + 
+        scale_shape_manual(values = shape) +
+        scale_size_manual(values = c(ACE = 0.5, default = 0.5), guide = FALSE) + 
+        xlim(-100,110) +
+        ylim(-100,110) +
+        labs(x = paste0("PC", 2), y = paste0("PC", 3), color = "GIA", shape = "GIA") +
+        coord_equal() +
+        theme(
+          plot.title = element_text(hjust = 0.5, size = 10),  # Title size
+          axis.title.x = element_text(size = 8),  # X axis title size
+          axis.title.y = element_text(size = 8),  # Y axis title size
+          axis.text.x = element_text(size = 6),  # X axis text size
+          axis.text.y = element_text(size = 6),  # Y axis text size
+          legend.title = element_text(size = 8),  # Legend title size
+          legend.text = element_text(size = 6),  # Legend text size
+          plot.margin = unit(rep(0.1, 4), "in"),  # Set plot margins
+          panel.grid.major = element_blank(),  # Remove major grid lines
+          panel.grid.minor = element_blank() 
+        )
+
+plot_list_2[[3]] <- ggplot(pcs[pcs$b1_s2 ==1,], aes_string(x = paste0('PC', 3), y = paste0('PC', 4), color = "ancestry", shape = "ancestry")) +
+        geom_point(aes(size = "default"), fill = NA, show.legend = F) +
+        theme_bigstatsr(0.6) + 
+        scale_colour_manual(values = color) + 
+        scale_shape_manual(values = shape) +
+        scale_size_manual(values = c(ACE = 0.5, default = 0.5), guide = FALSE) + 
+        xlim(-100,120) +
+        ylim(-100,120) +
+        labs(x = paste0("PC", 3), y = paste0("PC", 4), color = "GIA", shape = "GIA") +
+        coord_equal() +
+        theme(
+          plot.title = element_text(hjust = 0.5, size = 10),  # Title size
+          axis.title.x = element_text(size = 8),  # X axis title size
+          axis.title.y = element_text(size = 8),  # Y axis title size
+          axis.text.x = element_text(size = 6),  # X axis text size
+          axis.text.y = element_text(size = 6),  # Y axis text size
+          legend.title = element_text(size = 8),  # Legend title size
+          legend.text = element_text(size = 6),  # Legend text size
+          plot.margin = unit(rep(0.1, 4), "in"),  # Set plot margins
+          panel.grid.major = element_blank(),  # Remove major grid lines
+          panel.grid.minor = element_blank() 
+        )
+
+plot_list_2[[4]] <- ggplot(pcs[pcs$b1_s2 ==1,], aes_string(x = paste0('PC', 1), y = paste0('PC', 10), color = "ancestry", shape = "ancestry")) +
+        geom_point(aes(size = "default"), fill = NA, show.legend = F) +
+        theme_bigstatsr(0.6) + 
+        scale_colour_manual(values = color) + 
+        scale_shape_manual(values = shape) +
+        scale_size_manual(values = c(ACE = 0.5, default = 0.5), guide = FALSE) + 
+        xlim(-50,150) +
+        ylim(-100,100) +
+        labs(x = paste0("PC", 1), y = paste0("PC", 10), color = "GIA", shape = "GIA") +
+        coord_equal() +
+        theme(
+          plot.title = element_text(hjust = 0.5, size = 10),  # Title size
+          axis.title.x = element_text(size = 8),  # X axis title size
+          axis.title.y = element_text(size = 8),  # Y axis title size
+          axis.text.x = element_text(size = 6),  # X axis text size
+          axis.text.y = element_text(size = 6),  # Y axis text size
+          legend.title = element_text(size = 8),  # Legend title size
+          legend.text = element_text(size = 6),  # Legend text size
+          plot.margin = unit(rep(0.1, 4), "in"),  # Set plot margins
+          panel.grid.major = element_blank(),  # Remove major grid lines
+          panel.grid.minor = element_blank() 
+        )
+
+# Extract the legend from the first plot
+legend_2 <- get_legend(plot_list_2[[1]])
+
+# Remove legends from all individual plots
+plot_list_2 <- lapply(plot_list_2, function(plot) plot + theme(legend.position = "none"))
+
+# Combine the plots and add the legend on the right
+plot_onekg_ancestry_2 <- plot_grid(
+  plot_grid(plotlist = plot_list_2, nrow = 1),
+  legend_2,
+  rel_widths = c(3, 0.4)
+)
+
+```
+
+```{r Save ACE PCA plot }
+
+#ggsave('20250811_array_3b4102e323.pdf', plot_onekg_ancestry_2, width = 8.2, height = 2.25, units = "in")
+
+ggsave('20251210_array_eaa8d6126d.jpg', plot_onekg_ancestry_2, width = 8.2, height = 2.25, units = "in")
+
+
+```
+
+# 34505c4e9a
+
+```{r Make Plots}
+
+plot_list_3 <- list()
+
+plot_list_3[[1]] <- ggplot(pcs[pcs$b1_s3 ==1,], aes_string(x = paste0('PC', 1), y = paste0('PC', 2), color = "ancestry", shape = "ancestry")) +
+        geom_point(aes(size =  "default"), fill = NA, show.legend = TRUE) +
+        theme_bigstatsr(0.6) + 
+        scale_colour_manual(values = color) + 
+        scale_shape_manual(values = shape) +
+        scale_size_manual(values = c(ACE = 0.5, default = .5), guide = FALSE) +  # Remove size from legend
+        xlim(-130,150) +
+        ylim(-140,140) +
+        labs(x = paste0("PC", 1), y = paste0("PC", 2), color = "GIA", shape = "GIA") +
+        coord_equal() +
+        theme(
+          plot.title = element_text(hjust = 0.5, size = 10),  # Title size
+          axis.title.x = element_text(size = 8),  # X axis title size
+          axis.title.y = element_text(size = 8),  # Y axis title size
+          axis.text.x = element_text(size = 6),  # X axis text size
+          axis.text.y = element_text(size = 6),  # Y axis text size
+          legend.title = element_text(size = 8),  # Legend title size
+          legend.text = element_text(size = 6),  # Legend text size
+          plot.margin = unit(rep(0.1, 4), "in"),  # Set plot margins
+          panel.grid.major = element_blank(),  # Remove major grid lines
+          panel.grid.minor = element_blank()   # Remove minor grid lines
+        )
+
+
+plot_list_3[[2]] <- ggplot(pcs[pcs$b1_s3 ==1,], aes_string(x = paste0('PC', 2), y = paste0('PC', 3), color = "ancestry", shape = "ancestry")) +
+        geom_point(aes(size = "default"), fill = NA, show.legend = F)  +
+        theme_bigstatsr(0.6) + 
+        scale_colour_manual(values = color) + 
+        scale_shape_manual(values = shape) +
+        scale_size_manual(values = c(ACE = 0.5, default = .5), guide = FALSE) + 
+        xlim(-100,110) +
+        ylim(-100,110) +
+        labs(x = paste0("PC", 2), y = paste0("PC", 3), color = "GIA", shape = "GIA") +
+        coord_equal() +
+        theme(
+          plot.title = element_text(hjust = 0.5, size = 10),  # Title size
+          axis.title.x = element_text(size = 8),  # X axis title size
+          axis.title.y = element_text(size = 8),  # Y axis title size
+          axis.text.x = element_text(size = 6),  # X axis text size
+          axis.text.y = element_text(size = 6),  # Y axis text size
+          legend.title = element_text(size = 8),  # Legend title size
+          legend.text = element_text(size = 6),  # Legend text size
+          plot.margin = unit(rep(0.1, 4), "in"),  # Set plot margins
+          panel.grid.major = element_blank(),  # Remove major grid lines
+          panel.grid.minor = element_blank() 
+        )
+
+plot_list_3[[3]] <- ggplot(pcs[pcs$b1_s3 ==1,], aes_string(x = paste0('PC', 3), y = paste0('PC', 4), color = "ancestry", shape = "ancestry")) +
+        geom_point(aes(size = "default"), fill = NA, show.legend = F) +
+        theme_bigstatsr(0.6) + 
+        scale_colour_manual(values = color) + 
+        scale_shape_manual(values = shape) +
+        scale_size_manual(values = c(ACE = 0.5, default = .5), guide = FALSE) + 
+        xlim(-100,120) +
+        ylim(-100,120) +
+        labs(x = paste0("PC", 3), y = paste0("PC", 4), color = "GIA", shape = "GIA") +
+        coord_equal() +
+        theme(
+          plot.title = element_text(hjust = 0.5, size = 10),  # Title size
+          axis.title.x = element_text(size = 8),  # X axis title size
+          axis.title.y = element_text(size = 8),  # Y axis title size
+          axis.text.x = element_text(size = 6),  # X axis text size
+          axis.text.y = element_text(size = 6),  # Y axis text size
+          legend.title = element_text(size = 8),  # Legend title size
+          legend.text = element_text(size = 6),  # Legend text size
+          plot.margin = unit(rep(0.1, 4), "in"),  # Set plot margins
+          panel.grid.major = element_blank(),  # Remove major grid lines
+          panel.grid.minor = element_blank() 
+        )
+
+plot_list_3[[4]] <- ggplot(pcs[pcs$b1_s3 ==1,], aes_string(x = paste0('PC', 1), y = paste0('PC', 10), color = "ancestry", shape = "ancestry")) +
+        geom_point(aes(size = "default"), fill = NA, show.legend = F) +
+        theme_bigstatsr(0.6) + 
+        scale_colour_manual(values = color) + 
+        scale_shape_manual(values = shape) +
+        scale_size_manual(values = c(ACE = 0.5, default = .5), guide = FALSE) + 
+        xlim(-50,150) +
+        ylim(-100,100) +
+        labs(x = paste0("PC", 1), y = paste0("PC", 10), color = "GIA", shape = "GIA") +
+        coord_equal() +
+        theme(
+          plot.title = element_text(hjust = 0.5, size = 10),  # Title size
+          axis.title.x = element_text(size = 8),  # X axis title size
+          axis.title.y = element_text(size = 8),  # Y axis title size
+          axis.text.x = element_text(size = 6),  # X axis text size
+          axis.text.y = element_text(size = 6),  # Y axis text size
+          legend.title = element_text(size = 8),  # Legend title size
+          legend.text = element_text(size = 6),  # Legend text size
+          plot.margin = unit(rep(0.1, 4), "in"),  # Set plot margins
+          panel.grid.major = element_blank(),  # Remove major grid lines
+          panel.grid.minor = element_blank() 
+        )
+
+# Extract the legend from the first plot
+legend_3 <- get_legend(plot_list_3[[1]])
+
+# Remove legends from all individual plots
+plot_list_3 <- lapply(plot_list_3, function(plot) plot + theme(legend.position = "none"))
+
+# Combine the plots and add the legend on the right
+plot_onekg_ancestry_3 <- plot_grid(
+  plot_grid(plotlist = plot_list_3, nrow = 1),
+  legend_3,
+  rel_widths = c(3, 0.4)
+)
+
+```
+
+```{r Save ACE PCA plot }
+
+#ggsave('20250811_array_3b4102e323.pdf', plot_onekg_ancestry_3, width = 8.2, height = 2.25, units = "in")
+
+ggsave('20251210_array_34505c4e9a.jpg', plot_onekg_ancestry_3, width = 8.2, height = 2.25, units = "in")
+
+
+```
+
+# 1c18651582
+```{r Make Plots}
+
+plot_list_4 <- list()
+
+plot_list_4[[1]] <- ggplot(pcs[pcs$b2_s1 ==1,], aes_string(x = paste0('PC', 1), y = paste0('PC', 2), color = "ancestry", shape = "ancestry")) +
+        geom_point(aes(size =  "default"), fill = NA, show.legend = TRUE) +
+        theme_bigstatsr(0.6) + 
+        scale_colour_manual(values = color) + 
+        scale_shape_manual(values = shape) +
+        scale_size_manual(values = c(ACE = 0.5, default = .5), guide = FALSE) +  # Remove size from legend
+        xlim(-130,150) +
+        ylim(-140,140) +
+        labs(x = paste0("PC", 1), y = paste0("PC", 2), color = "GIA", shape = "GIA") +
+        coord_equal() +
+        theme(
+          plot.title = element_text(hjust = 0.5, size = 10),  # Title size
+          axis.title.x = element_text(size = 8),  # X axis title size
+          axis.title.y = element_text(size = 8),  # Y axis title size
+          axis.text.x = element_text(size = 6),  # X axis text size
+          axis.text.y = element_text(size = 6),  # Y axis text size
+          legend.title = element_text(size = 8),  # Legend title size
+          legend.text = element_text(size = 6),  # Legend text size
+          plot.margin = unit(rep(0.1, 4), "in"),  # Set plot margins
+          panel.grid.major = element_blank(),  # Remove major grid lines
+          panel.grid.minor = element_blank()   # Remove minor grid lines
+        )
+
+
+plot_list_4[[2]] <- ggplot(pcs[pcs$b2_s1 ==1,], aes_string(x = paste0('PC', 2), y = paste0('PC', 3), color = "ancestry", shape = "ancestry")) +
+        geom_point(aes(size = "default"), fill = NA, show.legend = F)  +
+        theme_bigstatsr(0.6) + 
+        scale_colour_manual(values = color) + 
+        scale_shape_manual(values = shape) +
+        scale_size_manual(values = c(ACE = 0.5, default = .5), guide = FALSE) + 
+        xlim(-100,110) +
+        ylim(-100,110) +
+        labs(x = paste0("PC", 2), y = paste0("PC", 3), color = "GIA", shape = "GIA") +
+        coord_equal() +
+        theme(
+          plot.title = element_text(hjust = 0.5, size = 10),  # Title size
+          axis.title.x = element_text(size = 8),  # X axis title size
+          axis.title.y = element_text(size = 8),  # Y axis title size
+          axis.text.x = element_text(size = 6),  # X axis text size
+          axis.text.y = element_text(size = 6),  # Y axis text size
+          legend.title = element_text(size = 8),  # Legend title size
+          legend.text = element_text(size = 6),  # Legend text size
+          plot.margin = unit(rep(0.1, 4), "in"),  # Set plot margins
+          panel.grid.major = element_blank(),  # Remove major grid lines
+          panel.grid.minor = element_blank() 
+        )
+
+plot_list_4[[3]] <- ggplot(pcs[pcs$b2_s1 ==1,], aes_string(x = paste0('PC', 3), y = paste0('PC', 4), color = "ancestry", shape = "ancestry")) +
+        geom_point(aes(size = "default"), fill = NA, show.legend = F) +
+        theme_bigstatsr(0.6) + 
+        scale_colour_manual(values = color) + 
+        scale_shape_manual(values = shape) +
+        scale_size_manual(values = c(ACE = 0.5, default = .5), guide = FALSE) + 
+        xlim(-100,120) +
+        ylim(-100,120) +
+        labs(x = paste0("PC", 3), y = paste0("PC", 4), color = "GIA", shape = "GIA") +
+        coord_equal() +
+        theme(
+          plot.title = element_text(hjust = 0.5, size = 10),  # Title size
+          axis.title.x = element_text(size = 8),  # X axis title size
+          axis.title.y = element_text(size = 8),  # Y axis title size
+          axis.text.x = element_text(size = 6),  # X axis text size
+          axis.text.y = element_text(size = 6),  # Y axis text size
+          legend.title = element_text(size = 8),  # Legend title size
+          legend.text = element_text(size = 6),  # Legend text size
+          plot.margin = unit(rep(0.1, 4), "in"),  # Set plot margins
+          panel.grid.major = element_blank(),  # Remove major grid lines
+          panel.grid.minor = element_blank() 
+        )
+
+plot_list_4[[4]] <- ggplot(pcs[pcs$b2_s1 ==1,], aes_string(x = paste0('PC', 1), y = paste0('PC', 10), color = "ancestry", shape = "ancestry")) +
+        geom_point(aes(size = "default"), fill = NA, show.legend = F) +
+        theme_bigstatsr(0.6) + 
+        scale_colour_manual(values = color) + 
+        scale_shape_manual(values = shape) +
+        scale_size_manual(values = c(ACE = 0.5, default = .5), guide = FALSE) + 
+        xlim(-50,150) +
+        ylim(-100,100) +
+        labs(x = paste0("PC", 1), y = paste0("PC", 10), color = "GIA", shape = "GIA") +
+        coord_equal() +
+        theme(
+          plot.title = element_text(hjust = 0.5, size = 10),  # Title size
+          axis.title.x = element_text(size = 8),  # X axis title size
+          axis.title.y = element_text(size = 8),  # Y axis title size
+          axis.text.x = element_text(size = 6),  # X axis text size
+          axis.text.y = element_text(size = 6),  # Y axis text size
+          legend.title = element_text(size = 8),  # Legend title size
+          legend.text = element_text(size = 6),  # Legend text size
+          plot.margin = unit(rep(0.1, 4), "in"),  # Set plot margins
+          panel.grid.major = element_blank(),  # Remove major grid lines
+          panel.grid.minor = element_blank() 
+        )
+
+# Extract the legend from the first plot
+legend_4 <- get_legend(plot_list_4[[1]])
+
+# Remove legends from all individual plots
+plot_list_4 <- lapply(plot_list_4, function(plot) plot + theme(legend.position = "none"))
+
+# Combine the plots and add the legend on the right
+plot_onekg_ancestry_4 <- plot_grid(
+  plot_grid(plotlist = plot_list_4, nrow = 1),
+  legend_4,
+  rel_widths = c(3, 0.4)
+)
+
+```
+
+```{r Save ACE PCA plot }
+
+#ggsave('20250811_array_3b4102e323.pdf', plot_onekg_ancestry_3, width = 8.2, height = 2.25, units = "in")
+
+ggsave('20251210_array_1c18651582.jpg', plot_onekg_ancestry_4, width = 8.2, height = 2.25, units = "in")
+
+```
+
+# e9229326cc
+```{r Make Plots}
+
+plot_list_5 <- list()
+
+plot_list_5[[1]] <- ggplot(pcs[pcs$b2_s2 ==1,], aes_string(x = paste0('PC', 1), y = paste0('PC', 2), color = "ancestry", shape = "ancestry")) +
+        geom_point(aes(size =  "default"), fill = NA, show.legend = TRUE) +
+        theme_bigstatsr(0.6) + 
+        scale_colour_manual(values = color) + 
+        scale_shape_manual(values = shape) +
+        scale_size_manual(values = c(ACE = 0.5, default = .5), guide = FALSE) +  # Remove size from legend
+        xlim(-130,150) +
+        ylim(-140,140) +
+        labs(x = paste0("PC", 1), y = paste0("PC", 2), color = "GIA", shape = "GIA") +
+        coord_equal() +
+        theme(
+          plot.title = element_text(hjust = 0.5, size = 10),  # Title size
+          axis.title.x = element_text(size = 8),  # X axis title size
+          axis.title.y = element_text(size = 8),  # Y axis title size
+          axis.text.x = element_text(size = 6),  # X axis text size
+          axis.text.y = element_text(size = 6),  # Y axis text size
+          legend.title = element_text(size = 8),  # Legend title size
+          legend.text = element_text(size = 6),  # Legend text size
+          plot.margin = unit(rep(0.1, 4), "in"),  # Set plot margins
+          panel.grid.major = element_blank(),  # Remove major grid lines
+          panel.grid.minor = element_blank()   # Remove minor grid lines
+        )
+
+
+plot_list_5[[2]] <- ggplot(pcs[pcs$b2_s2 ==1,], aes_string(x = paste0('PC', 2), y = paste0('PC', 3), color = "ancestry", shape = "ancestry")) +
+        geom_point(aes(size = "default"), fill = NA, show.legend = F)  +
+        theme_bigstatsr(0.6) + 
+        scale_colour_manual(values = color) + 
+        scale_shape_manual(values = shape) +
+        scale_size_manual(values = c(ACE = 0.5, default = .5), guide = FALSE) + 
+        xlim(-100,110) +
+        ylim(-100,110) +
+        labs(x = paste0("PC", 2), y = paste0("PC", 3), color = "GIA", shape = "GIA") +
+        coord_equal() +
+        theme(
+          plot.title = element_text(hjust = 0.5, size = 10),  # Title size
+          axis.title.x = element_text(size = 8),  # X axis title size
+          axis.title.y = element_text(size = 8),  # Y axis title size
+          axis.text.x = element_text(size = 6),  # X axis text size
+          axis.text.y = element_text(size = 6),  # Y axis text size
+          legend.title = element_text(size = 8),  # Legend title size
+          legend.text = element_text(size = 6),  # Legend text size
+          plot.margin = unit(rep(0.1, 4), "in"),  # Set plot margins
+          panel.grid.major = element_blank(),  # Remove major grid lines
+          panel.grid.minor = element_blank() 
+        )
+
+plot_list_5[[3]] <- ggplot(pcs[pcs$b2_s2 ==1,], aes_string(x = paste0('PC', 3), y = paste0('PC', 4), color = "ancestry", shape = "ancestry")) +
+        geom_point(aes(size = "default"), fill = NA, show.legend = F) +
+        theme_bigstatsr(0.6) + 
+        scale_colour_manual(values = color) + 
+        scale_shape_manual(values = shape) +
+        scale_size_manual(values = c(ACE = 0.5, default = .5), guide = FALSE) + 
+        xlim(-100,120) +
+        ylim(-100,120) +
+        labs(x = paste0("PC", 3), y = paste0("PC", 4), color = "GIA", shape = "GIA") +
+        coord_equal() +
+        theme(
+          plot.title = element_text(hjust = 0.5, size = 10),  # Title size
+          axis.title.x = element_text(size = 8),  # X axis title size
+          axis.title.y = element_text(size = 8),  # Y axis title size
+          axis.text.x = element_text(size = 6),  # X axis text size
+          axis.text.y = element_text(size = 6),  # Y axis text size
+          legend.title = element_text(size = 8),  # Legend title size
+          legend.text = element_text(size = 6),  # Legend text size
+          plot.margin = unit(rep(0.1, 4), "in"),  # Set plot margins
+          panel.grid.major = element_blank(),  # Remove major grid lines
+          panel.grid.minor = element_blank() 
+        )
+
+plot_list_5[[4]] <- ggplot(pcs[pcs$b2_s2 ==1,], aes_string(x = paste0('PC', 4), y = paste0('PC', 5), color = "ancestry", shape = "ancestry")) +
+        geom_point(aes(size = "default"), fill = NA, show.legend = F) +
+        theme_bigstatsr(0.6) + 
+        scale_colour_manual(values = color) + 
+        scale_shape_manual(values = shape) +
+        scale_size_manual(values = c(ACE = 0.5, default = .5), guide = FALSE) + 
+        xlim(-50,150) +
+        ylim(-100,100) +
+        labs(x = paste0("PC", 1), y = paste0("PC", 10), color = "GIA", shape = "GIA") +
+        coord_equal() +
+        theme(
+          plot.title = element_text(hjust = 0.5, size = 10),  # Title size
+          axis.title.x = element_text(size = 8),  # X axis title size
+          axis.title.y = element_text(size = 8),  # Y axis title size
+          axis.text.x = element_text(size = 6),  # X axis text size
+          axis.text.y = element_text(size = 6),  # Y axis text size
+          legend.title = element_text(size = 8),  # Legend title size
+          legend.text = element_text(size = 6),  # Legend text size
+          plot.margin = unit(rep(0.1, 4), "in"),  # Set plot margins
+          panel.grid.major = element_blank(),  # Remove major grid lines
+          panel.grid.minor = element_blank() 
+        )
+
+# Extract the legend from the first plot
+legend_5 <- get_legend(plot_list_5[[1]])
+
+# Remove legends from all individual plots
+plot_list_5 <- lapply(plot_list_5, function(plot) plot + theme(legend.position = "none"))
+
+# Combine the plots and add the legend on the right
+plot_onekg_ancestry_5 <- plot_grid(
+  plot_grid(plotlist = plot_list_5, nrow = 1),
+  legend_5,
+  rel_widths = c(3, 0.4)
+)
+
+```
+
+```{r Save ACE PCA plot }
+
+#ggsave('20250811_array_3b4102e323.pdf', plot_onekg_ancestry_3, width = 8.2, height = 2.25, units = "in")
+
+ggsave('20251210_array_e9229326cc.jpg', plot_onekg_ancestry_5, width = 8.2, height = 2.25, units = "in")
+
+```

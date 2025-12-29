@@ -1,0 +1,74 @@
+---
+title: "read saige results from ASD GWAS"
+output: html_document
+date: "2025-10-16"
+---
+###############################################################################################
+# library
+###############################################################################################
+
+```{r packages}
+
+library(tidyverse)
+library(dplyr)
+library(data.table)
+library(ggplot2)
+library(qqman)
+
+
+
+```
+
+###############################################################################################
+# read in data
+###############################################################################################
+
+```{r get results}
+
+asd_result <- fread("../20251015_saige_hm3_eur/HM3_EUR_R_SAIGE_phe_313.3_vcf.txt")
+
+```
+
+```{r}
+
+#eur_phe_313.3_chr
+
+# Path to SAIGE output files
+files <- list.files("../20251015_saige_hm3_eur/", pattern = "eur_phe_313.3_chr.*\\.txt$", full.names = TRUE)
+
+# Read each file and combine into one data.table
+saige_asd <- rbindlist(lapply(files, fread))
+
+# Inspect columns
+head(saige_asd)
+
+```
+
+```{r}
+
+qq(saige_asd$p.value, main = "QQ plot for EUR Phe 313.3")
+
+
+```
+
+```{r}
+
+chisq <- qchisq(1 - saige_asd$p.value, 1)
+lambda_gc <- median(chisq) / qchisq(0.5, 1)
+lambda_gc
+
+
+```
+
+```{r}
+
+manhattan(saige_asd,
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerID",
+          p = "p.value",
+          main = "Manhattan Plot: EUR Phe 313.3",
+          ylim = c(0, max(-log10(saige_asd$p.value)) + 1))
+
+
+```

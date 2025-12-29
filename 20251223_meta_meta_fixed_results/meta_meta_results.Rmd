@@ -1,0 +1,261 @@
+---
+title: "Results from Metal Meta Meta; fixed effect"
+author: "Alex Flynn-Carroll"
+date: "2025-12-23"
+output: html_document
+---
+###############################################################################################
+# library
+###############################################################################################
+
+```{r packages}
+
+library(tidyverse)
+library(dplyr)
+library(data.table)
+library(ggplot2)
+library(qqman)
+library(PheWAS)
+library(jpeg)
+library(wesanderson)
+library(ggrepel)
+library(circlize)
+
+```
+
+###############################################################################################
+# read in rolled up df
+###############################################################################################
+
+```{r}
+
+# 1. List all files ending with "allchr.txt" in a folder
+file_list <- list.files(path = "/mnt/arcus/lab/users/flynncarra/projects/20251222_AFR_EUR_meta/metal_results/meta_results/", pattern = "\\.txt$", full.names = TRUE)
+
+```
+
+```{r}
+
+# 2. Read each file into a list of data frames
+df_list <- lapply(file_list, function(f) {
+  df <- read.table(f, header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+  df <- subset(df, P.value < 0.01)
+  df$source_file <- basename(f)
+  df
+})
+
+# 3. Combine all data frames into one
+res <- do.call(rbind, df_list)
+
+rm(df_list)
+
+```
+
+[1] 2733998       8
+
+###############################################################################################
+# filter df
+###############################################################################################
+
+#2056060
+```{r}
+
+dim(res)
+
+res <- res %>%
+  filter(!grepl("\\?", Direction))
+
+
+```
+# to 1490457
+
+
+```{r}
+
+res <- res %>%
+  filter(nchar(Direction) == 2)
+
+dim(res)
+```
+
+```{r}
+
+#res_604 <- res[res$source_file != "meta_results_phe_604_1.txt",]
+
+res <- res[res$source_file != "meta_results_phe_751.12_1.txt",]
+
+#res <- res[res$source_file != "meta_results_phe_604_1.txt",]
+
+#meta_results_phe_604_1.txt
+
+```
+
+```{r}
+
+#female menstration
+#res_626 <- res[res$source_file != "meta_results_phe_626_1.txt",]
+
+#res <- res[res$source_file != "meta_results_phe_626_1.txt",]
+
+#meta_results_phe_604_1.txt
+
+```
+
+
+```{r}
+
+adhd_metal <- read.table("/mnt/arcus/lab/users/flynncarra/projects/20251222_AFR_EUR_meta/metal_results/meta_results_phe_313.1_1.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+
+```
+
+###############################################################################################
+# read in full GWAS with significant hits
+###############################################################################################
+
+
+###### get the full gws gwas
+# added adhd for comparison to AFR
+```{r}
+
+# 1. List all files ending with "allchr.txt" in a folder
+file_list_sig <- c("/mnt/arcus/lab/users/flynncarra/projects/20251215_hwe_1e6_eur/ru_metal_results/meta_results_phe_1005_1.txt",
+                   
+                   "/mnt/arcus/lab/users/flynncarra/projects/20251215_hwe_1e6_eur/leaf_metal_results/meta_results_phe_276.12_1.txt",
+                   
+                   "/mnt/arcus/lab/users/flynncarra/projects/20251215_hwe_1e6_eur/ru_metal_results/meta_results_phe_557_1.txt",
+                   
+                   "/mnt/arcus/lab/users/flynncarra/projects/20251215_hwe_1e6_eur/leaf_metal_results/meta_results_phe_315.1_1.txt",
+                   
+                   "/mnt/arcus/lab/users/flynncarra/projects/20251215_hwe_1e6_eur/leaf_metal_results/meta_results_phe_747.1_1.txt",
+                   
+                   "/mnt/arcus/lab/users/flynncarra/projects/20251215_hwe_1e6_eur/leaf_metal_results/meta_results_phe_755.61_1.txt",
+                   "/mnt/arcus/lab/users/flynncarra/projects/20251215_hwe_1e6_eur/leaf_metal_results/meta_results_phe_313.1_1.txt")
+
+```
+
+```{r}
+
+# 2. Read each file into a list of data frames
+df_list <- lapply(file_list_sig, function(f) {
+  df <- read.table(f, header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+  df$source_file <- basename(f)
+  df
+})
+
+# 3. Combine all data frames into one
+res_sig <- do.call(rbind, df_list)
+
+rm(df_list)
+
+```
+
+```{r only keep those in 2 or more arrays}
+
+res_sig <- res_sig %>%
+  filter(str_count(Direction, fixed("?")) <= 3)
+
+```
+
+```{r}
+
+parts <- strsplit(as.character(res_sig$MarkerName), ":")
+res_sig$CHR <- sapply(parts, `[`, 1)
+res_sig$POS <- as.numeric(sapply(parts, `[`, 2))
+
+```
+
+```{r}
+
+res_sig$CHR <- as.numeric(res_sig$CHR)
+
+res_sig$POS <- as.numeric(res_sig$POS)
+
+```
+
+
+###############################################################################################
+# Phecodes
+###############################################################################################
+
+```{r icd to phecode map}
+
+phecode_map <- read.csv("../20250801_arcus_phenotype_counts/Phecode_map_v1_2_icd9_icd10cm.csv")
+
+```
+
+```{r unique phecode descriptions}
+
+phecodes <- unique(phecode_map[,c("Phecode", "PhecodeString")])
+
+phecodes <- phecodes %>%
+  group_by(Phecode) %>%
+  summarise(
+    PhecodeString = paste(unique(PhecodeString), collapse = "; "),
+    .groups = "drop"
+  )
+
+colnames(phecodes) <- c("phecode", "PhecodeString")
+
+phecodes$phecode <- as.character(phecodes$phecode)
+
+```
+
+```{r}
+
+res$phecode <- str_extract(res$source_file, "(?<=phe_)[0-9.]+(?=_1\\.txt)")
+
+```
+
+```{r}
+
+top_hits <- res[res$P.value<=5e-8,]
+
+top_hits <- left_join(top_hits, phecodes, by="phecode")
+
+```
+
+length(unique(res$MarkerName))
+[1] 565009
+> 0.05/565009
+[1] 1.056334e-07
+# number of variants used in the analysis
+
+```{r}
+
+write_csv(top_hits, "top_hits_afr__eur_1e6_meta_phewas.csv")
+
+```
+
+```{r}
+
+filtered_phe_man_phe <- phewasManhattan(data.frame(phenotype = res$phecode, p = res$P.value), 
+                                    title = "Arcus AFR-EUR Meta-Analyzed; Phecodes", 
+                                    annotate.size=2,
+                                    size.x.labels=5, 
+                                    size.y.labels=5,
+                                    significant.line = 5e-8,
+                                    point.size =1)+ coord_cartesian(ylim = c(2, NA))
+
+filtered_phe_man_phe
+
+```
+
+```{r}
+
+# Save as JPEG, specify size in inches
+jpeg(
+  filename = "afr_eur_phewas_meta_gws_hwe_1e6 .jpg",
+  width = 8,        # width in inches
+  height = 4,       # height in inches
+  units = "in",     # tells R that width/height are in inches
+  res = 300         # resolution in DPI (dots per inch)
+)
+
+# Your plot
+filtered_phe_man_phe
+
+# Important: close the device to finalize the file
+dev.off()
+
+```

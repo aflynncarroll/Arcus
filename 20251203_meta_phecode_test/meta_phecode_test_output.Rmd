@@ -1,0 +1,66 @@
+---
+title: "Plot Meta test output"
+author: "Alex Flynn-Carroll"
+date: "2025-12-03"
+output: html_document
+---
+
+###############################################################################################
+# library
+###############################################################################################
+
+```{r packages}
+
+library(tidyverse)
+library(dplyr)
+library(data.table)
+library(ggplot2)
+library(qqman)
+library(PheWAS)
+library(jpeg)
+library(wesanderson)
+library(ggrepel)
+library(circlize)
+
+```
+
+###############################################################################################
+# read in data
+###############################################################################################
+
+```{r}
+
+phe_7471_meta <- read.table("meta_results_phe_747.11.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+```
+
+###############################################################################################
+# plot results
+###############################################################################################
+
+```{r}
+
+parts <- strsplit(as.character(phe_7471_meta$MarkerName), ":")
+phe_7471_meta$CHR <- sapply(parts, `[`, 1)
+phe_7471_meta$POS <- as.numeric(sapply(parts, `[`, 2))
+
+```
+
+```{r}
+
+phe_7471_meta$CHR <- as.numeric(phe_7471_meta$CHR)
+
+phe_7471_meta$POS <- as.numeric(phe_7471_meta$POS)
+
+```
+
+```{r}
+
+man_7471  <- manhattan(phe_7471_meta,
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerName",
+          p = "P.value",
+          main = "Manhattan Plot: EUR Meta Median Phecode 747.1")
+#          ylim = c(0, max(-log10(phe_751.12$p.value)) + 1))
+```

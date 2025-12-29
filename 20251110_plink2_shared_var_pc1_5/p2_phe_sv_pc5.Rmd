@@ -1,0 +1,116 @@
+---
+title: "PLINK 2 PheWAS PC 1-5 shared variants results"
+author: "Alex Flynn-Carroll"
+date: "2025-11-11"
+output: html_document
+---
+
+###############################################################################################
+# library
+###############################################################################################
+
+```{r packages}
+
+library(tidyverse)
+library(dplyr)
+library(data.table)
+library(ggplot2)
+library(qqman)
+library(PheWAS)
+library(jpeg)
+library(parallel)
+
+```
+
+###############################################################################################
+# read in data
+###############################################################################################
+
+```{r}
+
+test_df <- read.table("/mnt/arcus/lab/users/flynncarra/projects/20251110_plink2_shared_var_pc1_5/results/eur_phe_495.phe_495.glm.logistic.hybrid", header = F, sep = "\t", stringsAsFactors = FALSE)
+
+colnames(test_df) <- c("CHROM", "POS", "ID", "REF", "ALT", "PROVISIONAL_REF?", "A1", "OMITTED", "A1_FREQ", "FIRTH?", "TEST", "OBS_CT", "OR", "LOG(OR)_SE", "Z_STAT", "P", "ERRCODE")
+
+```
+
+```{r}
+
+file_list <- list.files(
+  path = "/mnt/arcus/lab/users/flynncarra/projects/20251110_plink2_shared_var_pc1_5/results/",
+  pattern = "^eur_phe_[0-9]+(?:\\.[0-9]+)*\\.phe_[0-9]+(?:\\.[0-9]+)*\\.glm\\.logistic\\.hybrid$",
+  full.names = TRUE
+)
+
+```
+
+```{r}
+
+
+df_list <- lapply(file_list, function(f) {
+  # fread is much faster and more memory-efficient than read.table
+  df <- fread(f, sep = "\t", header = F, stringsAsFactors = FALSE, showProgress = FALSE)
+  
+  # Rename columns (if needed)
+  setnames(df, c("CHROM", "POS", "ID", "REF", "ALT", "PROVISIONAL_REF?", 
+                 "A1", "OMITTED", "A1_FREQ", "FIRTH?", "TEST", "OBS_CT", 
+                 "OR", "LOG(OR)_SE", "Z_STAT", "P", "ERRCODE"))
+  
+  # Filter efficiently
+  df <- df[TEST == "ADD" & P < 0.01]
+  
+  # Add source file name
+  df[, source_file := basename(f)]
+  
+  return(df)
+})
+
+
+```
+
+```{r}
+
+res <- do.call(rbind, df_list)
+
+rm(df_list)
+
+```
+
+
+old code
+```{r}
+
+
+# 2. Read each file into a list of data frames
+df_list <- lapply(file_list, function(f) {
+  df <- read.table(f, header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+  colnames(df) <- c("CHROM", "POS", "ID", "REF", "ALT", "PROVISIONAL_REF?", "A1", "OMITTED", "A1_FREQ", "FIRTH?", "TEST", "OBS_CT", "OR", "LOG(OR)_SE", "Z_STAT", "P", "ERRCODE")
+  df <- subset(df, TEST == "ADD")
+  df <- subset(df, P < 0.01)
+  df$source_file <- basename(f)
+  df
+})
+
+# 3. Combine all data frames into one
+res <- do.call(rbind, df_list)
+
+rm(df_list)
+
+```
+
+###############################################################################################
+# get rsids
+###############################################################################################
+
+```{r}
+
+vars <- unique(test_df[,c("CHROM", "POS", "ID", "REF", "ALT")])
+
+```
+
+```{r}
+
+chr22 <- read.table(gzfile("/mnt/arcus/lab/users/flynncarra/projects/20251110_plink2_shared_var_results/rsid_hg19/bed_chr_22.bed.gz"), header = F, sep = "\t", skip = 1)
+
+
+```

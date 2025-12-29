@@ -1,0 +1,547 @@
+---
+title: "Meta Phecode PheWAS results"
+author: "Alex Flynn-Carroll"
+date: "2025-12-05"
+output: html_document
+---
+
+###############################################################################################
+# library
+###############################################################################################
+
+```{r packages}
+
+library(tidyverse)
+library(dplyr)
+library(data.table)
+library(ggplot2)
+library(qqman)
+library(PheWAS)
+library(jpeg)
+library(wesanderson)
+library(ggrepel)
+library(circlize)
+
+```
+
+###############################################################################################
+# read in data
+###############################################################################################
+
+```{r}
+
+# 1. List all files ending with "allchr.txt" in a folder
+file_list <- list.files(path = "/mnt/arcus/lab/users/flynncarra/projects/20251205_run_phecode_wide_meta/metal_results/", pattern = "\\.txt$", full.names = TRUE)
+
+```
+
+```{r}
+
+# 2. Read each file into a list of data frames
+df_list <- lapply(file_list, function(f) {
+  df <- read.table(f, header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+  df <- subset(df, P.value < 0.01)
+  df$source_file <- basename(f)
+  df
+})
+
+# 3. Combine all data frames into one
+res <- do.call(rbind, df_list)
+
+rm(df_list)
+
+```
+
+[1] 3450324       8
+```{r}
+
+dim(res)
+
+res <- res %>%
+  filter(str_count(Direction, fixed("?")) <= 3)
+
+```
+
+1989817       8
+
+```{r}
+# only on 1 array
+#res_380_1 <- res[res$source_file == "meta_results_phe_380.1_1.txt",]
+
+```
+
+```{r}
+# only on 1 array
+#res <- res[res$source_file != "meta_results_phe_380.1_1.txt",]
+
+```
+
+```{r}
+
+#res_480_1 <- res[res$source_file == "meta_results_phe_480.1_1.txt",]
+
+
+```
+
+```{r}
+# only on 1 array
+#res <- res[res$source_file != "meta_results_phe_480.1_1.txt",]
+
+```
+
+```{r}
+
+test <- read.table("/mnt/arcus/lab/users/flynncarra/projects/20251205_run_phecode_wide_meta/metal_results/meta_results_phe_1010.6_1.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+```
+
+```{r}
+
+res_604.1 <- res[res$source_file != "meta_results_phe_604.1_1.txt",]
+
+res <- res[res$source_file != "meta_results_phe_604.1_1.txt",]
+
+```
+
+```{r}
+
+res_751.12 <- res[res$source_file != "meta_results_phe_751.12_1.txt",]
+
+res <- res[res$source_file != "meta_results_phe_751.12_1.txt",]
+
+```
+
+```{r}
+
+phenos <- read.table("/mnt/arcus/lab/users/flynncarra/projects/20251103_phewas_v3_phenotypes/array_eur_total_phe_200_v2.tsv",
+                 header = TRUE,       # first row has column names
+                 sep = "\t",          # tab-separated
+                 stringsAsFactors = FALSE)
+
+```
+
+```{r}
+
+# 1. List all files ending with "allchr.txt" in a folder
+file_list_sig <- c("/mnt/arcus/lab/users/flynncarra/projects/20251205_run_phecode_wide_meta/metal_results/meta_results_phe_1005_1.txt", "/mnt/arcus/lab/users/flynncarra/projects/20251205_run_phecode_wide_meta/metal_results/meta_results_phe_276.12_1.txt", "/mnt/arcus/lab/users/flynncarra/projects/20251205_run_phecode_wide_meta/metal_results/meta_results_phe_315.1_1.txt", "/mnt/arcus/lab/users/flynncarra/projects/20251205_run_phecode_wide_meta/metal_results/meta_results_phe_747.1_1.txt", "/mnt/arcus/lab/users/flynncarra/projects/20251205_run_phecode_wide_meta/metal_results/meta_results_phe_755.61_1.txt", "/mnt/arcus/lab/users/flynncarra/projects/20251205_run_phecode_wide_meta/metal_results/meta_results_phe_916_1.txt", "/mnt/arcus/lab/users/flynncarra/projects/20251205_run_phecode_wide_meta/metal_results/meta_results_phe_939_1.txt" )
+
+```
+
+```{r}
+
+# 2. Read each file into a list of data frames
+df_list <- lapply(file_list_sig, function(f) {
+  df <- read.table(f, header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+  df$source_file <- basename(f)
+  df
+})
+
+# 3. Combine all data frames into one
+res_sig <- do.call(rbind, df_list)
+
+rm(df_list)
+
+```
+
+```{r only keep those in 2 or more arrays}
+
+res_sig <- res_sig %>%
+  filter(str_count(Direction, fixed("?")) <= 3)
+
+```
+
+```{r}
+
+parts <- strsplit(as.character(res_sig$MarkerName), ":")
+res_sig$CHR <- sapply(parts, `[`, 1)
+res_sig$POS <- as.numeric(sapply(parts, `[`, 2))
+
+```
+
+```{r}
+
+res_sig$CHR <- as.numeric(res_sig$CHR)
+
+res_sig$POS <- as.numeric(res_sig$POS)
+
+```
+
+```{r icd to phecode map}
+
+phecode_map <- read.csv("../20250801_arcus_phenotype_counts/Phecode_map_v1_2_icd9_icd10cm.csv")
+
+```
+
+PHENOFILE=/mnt/arcus/lab/users/flynncarra/projects/20251008_phewas_saige_pheno/array_eur_total_phe_200.tsv
+PHENO_LIST=/mnt/arcus/lab/users/flynncarra/projects/20251008_phewas_saige_pheno/phecodes_200.txt
+
+```{r}
+
+phenos <- read.table("/mnt/arcus/lab/users/flynncarra/projects/20251008_phewas_saige_pheno/array_eur_total_phe_200.tsv", header = T)
+
+pheno_list <- read.table("/mnt/arcus/lab/users/flynncarra/projects/20251008_phewas_saige_pheno/phecodes_200.txt")
+
+```
+
+###############################################################################################
+# check ASD diag
+###############################################################################################
+
+```{r}
+
+raw_phenos <- read.csv("../20250908_phenotypes_v2/total_enounter_icd_phe.csv")
+
+raw_phenos <- raw_phenos %>% 
+  filter(Phecode == "313.3")
+
+raw_phenos <- raw_phenos[raw_phenos$pat_id %in% phenos$pat_id,]
+
+asd_count <- table(raw_phenos$pat_id)
+
+raw_asd <- unique(raw_phenos$pat_id)
+
+pheno_asd <- na.omit(phenos[phenos$phe_313.3 == 1, ]$pat_id)
+
+all(pheno_asd %in% raw_asd)
+
+setdiff(pheno_asd, raw_asd)
+# didnt account for same day here
+
+```
+
+###############################################################################################
+# Phecodes
+###############################################################################################
+
+```{r unique phecode descriptions}
+
+phecodes <- unique(phecode_map[,c("Phecode", "PhecodeString")])
+
+phecodes <- phecodes %>%
+  group_by(Phecode) %>%
+  summarise(
+    PhecodeString = paste(unique(PhecodeString), collapse = "; "),
+    .groups = "drop"
+  )
+
+colnames(phecodes) <- c("phecode", "PhecodeString")
+
+phecodes$phecode <- as.character(phecodes$phecode)
+
+```
+
+```{r}
+
+res$phecode <- str_extract(res$source_file, "(?<=phe_)[0-9.]+(?=_1\\.txt)")
+
+```
+
+```{r}
+
+top_hits <- res[res$P.value<=5e-8,]
+
+top_hits <- left_join(top_hits, phecodes, by="phecode")
+
+```
+
+```{r}
+
+res_phecodes <- as.data.frame(unique(res$phecode))
+
+colnames(res_phecodes) <- c("phecode")
+
+res_phecodes <- left_join(res_phecodes, phecodes, by="phecode")
+
+```
+
+###############################################################################################
+# PheWAS Plot
+###############################################################################################
+
+```{r}
+
+filtered_phe_man_phe <- phewasManhattan(data.frame(phenotype = res$phecode, p = res$P.value), 
+                                    title = "Arcus EUR Meta-Analyzed; Phecodes", 
+                                    annotate.size=2,
+                                    size.x.labels=5, 
+                                    size.y.labels=5,
+                                    significant.line = 5e-8,
+                                    point.size =1)+ coord_cartesian(ylim = c(2, NA))
+
+filtered_phe_man_phe
+
+```
+
+```{r}
+
+# Save as JPEG, specify size in inches
+jpeg(
+  filename = "saige_phewas_meta_gws_5e8.jpg",
+  width = 8,        # width in inches
+  height = 4,       # height in inches
+  units = "in",     # tells R that width/height are in inches
+  res = 300         # resolution in DPI (dots per inch)
+)
+
+# Your plot
+filtered_phe_man_phe
+
+# Important: close the device to finalize the file
+dev.off()
+
+```
+
+###############################################################################################
+# individual GWAS plots
+###############################################################################################
+
+```{r}
+
+phe_1005_man <- manhattan(res_sig[res_sig$source_file == "meta_results_phe_1005_1.txt",],
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerName",
+          p = "P.value",
+          main = "Manhattan Plot: Other Symptoms (1005)",
+          ylim = c(0, max(-log10(res_sig$P.value)) + 1))
+
+phe_1005_man
+
+```
+```{r}
+
+jpeg("meta_man_phe_1005.jpg", width = 8*300, height = 6*300, res = 300)
+
+manhattan(res_sig[res_sig$source_file == "meta_results_phe_1005_1.txt",],
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerName",
+          p = "P.value",
+          main = "Manhattan Plot: Other Symptoms (1005)",
+          ylim = c(0, max(-log10(res_sig$P.value)) + 1))
+
+dev.off()
+
+```
+
+```{r}
+
+phe_276_12_man <- manhattan(res_sig[res_sig$source_file == "meta_results_phe_276.12_1.txt",],
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerName",
+          p = "P.value",
+          main = "Manhattan Plot: EUR \n Hyposmolality and/or hyponatremia (276.12)",
+          ylim = c(0, max(-log10(res_sig$P.value)) + 1))
+
+phe_276_12_man
+
+```
+```{r}
+
+jpeg("meta_man_phe_276.12.jpg", width = 8*300, height = 6*300, res = 300)
+
+manhattan(res_sig[res_sig$source_file == "meta_results_phe_276.12_1.txt",],
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerName",
+          p = "P.value",
+          main = "Manhattan Plot: EUR \n Hyposmolality and/or hyponatremia (276.12)",
+          ylim = c(0, max(-log10(res_sig$P.value)) + 1))
+
+dev.off()
+
+```
+
+```{r}
+
+phe_315_1_man <- manhattan(res_sig[res_sig$source_file == "meta_results_phe_315.1_1.txt",],
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerName",
+          p = "P.value",
+          main = "Manhattan Plot: EUR Learning disorder (315.1)",
+          ylim = c(0, max(-log10(res_sig$P.value)) + 1))
+
+phe_315_1_man
+
+```
+```{r}
+
+jpeg("meta_man_phe_315.1.jpg", width = 8*300, height = 6*300, res = 300)
+
+manhattan(res_sig[res_sig$source_file == "meta_results_phe_315.1_1.txt",],
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerName",
+          p = "P.value",
+          main = "Manhattan Plot: EUR Learning disorder (315.1)",
+          ylim = c(0, max(-log10(res_sig$P.value)) + 1))
+
+dev.off()
+
+```
+
+```{r}
+
+phe_747_1_man <- manhattan(res_sig[res_sig$source_file == "meta_results_phe_747.1_1.txt",],
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerName",
+          p = "P.value",
+          main = "Manhattan Plot: EUR Cardiac congenital anomalies (747.1)",
+          ylim = c(0, max(-log10(res_sig$P.value)) + 1))
+
+phe_747_1_man
+
+```
+```{r}
+
+jpeg("meta_man_phe_747.1.jpg", width = 8*300, height = 6*300, res = 300)
+
+manhattan(res_sig[res_sig$source_file == "meta_results_phe_747.1_1.txt",],
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerName",
+          p = "P.value",
+          main = "Manhattan Plot: EUR Cardiac congenital anomalies (747.1)",
+          ylim = c(0, max(-log10(res_sig$P.value)) + 1))
+
+dev.off()
+
+```
+
+```{r}
+
+phe_755_61_man <- manhattan(res_sig[res_sig$source_file == "meta_results_phe_755.61_1.txt",],
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerName",
+          p = "P.value",
+          main = "Manhattan Plot: EUR \n Congenital hip dysplasia and deformity (755.61)",
+          ylim = c(0, max(-log10(res_sig$P.value)) + 1))
+
+phe_755_61_man
+
+```
+```{r}
+
+jpeg("meta_man_phe_755.jpg", width = 8*300, height = 6*300, res = 300)
+
+manhattan(res_sig[res_sig$source_file == "meta_results_phe_755.61_1.txt",],
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerName",
+          p = "P.value",
+          main = "Manhattan Plot: EUR \n Congenital hip dysplasia and deformity (755.61)",
+          ylim = c(0, max(-log10(res_sig$P.value)) + 1))
+
+dev.off()
+
+```
+
+```{r}
+
+phe_916_man <- manhattan(res_sig[res_sig$source_file == "meta_results_phe_916_1.txt",],
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerName",
+          p = "P.value",
+          main = "Manhattan Plot: EUR Contusion (916)",
+          ylim = c(0, max(-log10(res_sig$P.value)) + 1))
+
+phe_916_man
+
+```
+```{r}
+
+jpeg("meta_man_phe_916.jpg", width = 8*300, height = 6*300, res = 300)
+
+manhattan(res_sig[res_sig$source_file == "meta_results_phe_916_1.txt",],
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerName",
+          p = "P.value",
+          main = "Manhattan Plot: EUR Contusion (916)",
+          ylim = c(0, max(-log10(res_sig$P.value)) + 1))
+
+dev.off()
+
+```
+
+```{r}
+
+phe_939_man <- manhattan(res_sig[res_sig$source_file == "meta_results_phe_939_1.txt",],
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerName",
+          p = "P.value",
+          main = "Manhattan Plot: EUR \n Atopic/contact dermatitis due to other or unspecified (939)",
+          ylim = c(0, max(-log10(res_sig$P.value)) + 1))
+
+phe_939_man
+
+```
+
+```{r}
+
+jpeg("meta_man_phe_939.jpg", width = 8*300, height = 6*300, res = 300)
+
+manhattan(res_sig[res_sig$source_file == "meta_results_phe_939_1.txt",],
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerName",
+          p = "P.value",
+          main = "Manhattan Plot: EUR \n Atopic/contact dermatitis due to other or unspecified (939)",
+          ylim = c(0, max(-log10(res_sig$P.value)) + 1))
+
+dev.off()
+
+```
+
+###############################################################################################
+# sex specific columns
+###############################################################################################
+
+```{r}
+
+phenos_604.1 <- phenos[phenos$phe_604.1 == 1, c("phe_604.1", "sex")]
+
+phenos_751.12 <- phenos[phenos$phe_751.12 == 1, c("phe_751.12", "sex")]
+
+```
+
+
+```{r}
+
+# Identify phecode columns
+phe_cols <- grep("^phe_", names(phenos), value = TRUE)
+
+is_single_sex <- function(phe_col) {
+  # Rows where phenotype = 1
+  idx <- which(phenos[[phe_col]] == 1)
+
+  # Sexes among cases
+  sex_vals <- phenos$sex[idx]
+
+  # Remove NA
+  sex_vals <- sex_vals[!is.na(sex_vals)]
+
+  # If no cases or all NAs → return FALSE or NA (your choice)
+  if (length(sex_vals) == 0) return(FALSE)
+
+  # Check if all the same sex
+  return(length(unique(sex_vals)) == 1)
+}
+
+
+single_sex_phecodes <- phe_cols[sapply(phe_cols, is_single_sex)]
+
+
+```
+
+```{r}
+
+is_single_sex("751.12")
+
+```

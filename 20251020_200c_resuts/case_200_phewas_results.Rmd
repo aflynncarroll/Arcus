@@ -1,0 +1,348 @@
+---
+title: "Results from 200 case phenotypes"
+output: html_document
+date: "2025-10-20"
+---
+
+###############################################################################################
+# library
+###############################################################################################
+
+```{r packages}
+
+library(tidyverse)
+library(dplyr)
+library(data.table)
+library(ggplot2)
+library(qqman)
+library(PheWAS)
+
+```
+
+###############################################################################################
+# read in data
+###############################################################################################
+
+
+```{r}
+
+# 1. List all files ending with "allchr.txt" in a folder
+file_list <- list.files(path = "../20251017_total_200_SAIGE/results/", pattern = "allchr\\.txt$", full.names = TRUE)
+
+# 2. Read each file into a list of data frames
+df_list <- lapply(file_list, function(f) {
+  df <- read.table(f, header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+  df$source_file <- basename(f)
+  df
+})
+
+# 3. Combine all data frames into one
+res <- do.call(rbind, df_list)
+
+rm(df_list)
+
+```
+
+```{r icd to phecode map}
+
+phecode_map <- read.csv("../20250801_arcus_phenotype_counts/Phecode_map_v1_2_icd9_icd10cm.csv")
+
+```
+
+###############################################################################################
+# significant results
+###############################################################################################
+
+```{r}
+
+res_sig <- res[res$p.value <= 5e-8,]
+
+```
+
+```{rsignifican hits}
+
+unique(res_sig$source_file)
+
+```
+
+
+```{r results to plot}
+
+plot_res <- res[res$source_file %in% c("phe_276.12_allchr.txt", "phe_604.1_allchr.txt", "phe_747.1_allchr.txt", "phe_313.3_allchr.txt"),]
+
+```
+
+
+###############################################################################################
+# save output
+###############################################################################################
+
+```{r}
+
+write.csv(res, "case_200_phe_result.csv")
+
+```
+
+```{r}
+
+res <- read.table("case_200_phe_result.csv", sep = ",", header = TRUE)
+
+
+```
+
+
+###############################################################################################
+# ASD
+###############################################################################################
+
+```{r}
+
+qq(plot_res[plot_res$source_file == "phe_313.3_allchr.txt",]$p.value, main = "QQ plot for EUR ASD (313.3)")
+
+
+```
+```{r}
+
+chisq_asd <- qchisq(1 - plot_res[plot_res$source_file == "phe_313.3_allchr.txt",]$p.value, 1)
+lambda_gc_asd <- median(chisq_asd) / qchisq(0.5, 1)
+lambda_gc_asd
+
+
+```
+
+```{r}
+
+pdf("ASD_QQ.pdf", width = 6, height = 6)
+qq(plot_res[plot_res$source_file == "phe_313.3_allchr.txt",]$p.value, main = "ASD (313.3): EUR")
+dev.off()
+
+
+```
+
+```{r}
+
+asd_man <- manhattan(plot_res[plot_res$source_file == "phe_313.3_allchr.txt",],
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerID",
+          p = "p.value",
+          main = "Manhattan Plot: EUR ASD (313.3)",
+          ylim = c(0, max(-log10(plot_res[plot_res$source_file == "phe_313.3_allchr.txt",]$p.value)) + 1))
+
+asd_man
+
+```
+
+```{r}
+
+pdf("asd_man.pdf", width = 8, height = 6)
+ manhattan(plot_res[plot_res$source_file == "phe_313.3_allchr.txt",],
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerID",
+          p = "p.value",
+          main = "ASD (313.3): EUR",
+          ylim = c(0, max(-log10(plot_res[plot_res$source_file == "phe_313.3_allchr.txt",]$p.value)) + 1))
+dev.off()
+
+
+```
+
+###############################################################################################
+# Hyposmolality and/or hyponatremia
+###############################################################################################
+
+```{r}
+
+qq(plot_res[plot_res$source_file == "phe_276.12_allchr.txt",]$p.value, main = "Hyponatremia (276.12): EUR")
+
+
+```
+
+```{r}
+
+pdf("hyp_QQ.pdf", width = 6, height = 6)
+qq(plot_res[plot_res$source_file == "phe_276.12_allchr.txt",]$p.value, main = "Hyponatremia (276.12): EUR")
+dev.off()
+
+
+```
+
+```{r}
+
+chisq_hyp <- qchisq(1 - plot_res[plot_res$source_file == "phe_276.12_allchr.txt",]$p.value, 1)
+lambda_gc_hyp <- median(chisq_hyp) / qchisq(0.5, 1)
+lambda_gc_hyp
+
+
+```
+
+```{r}
+
+manhattan(plot_res[plot_res$source_file == "phe_276.12_allchr.txt",],
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerID",
+          p = "p.value",
+          main = "Hyponatremia (276.12): EUR",
+          ylim = c(0, max(-log10(plot_res[plot_res$source_file == "phe_276.12_allchr.txt",]$p.value)) + 1))
+
+```
+
+```{r}
+
+pdf("hyp_man.pdf", width = 8, height = 6)
+manhattan(plot_res[plot_res$source_file == "phe_276.12_allchr.txt",],
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerID",
+          p = "p.value",
+          main = "Hyponatremia (276.12): EUR",
+          ylim = c(0, max(-log10(plot_res[plot_res$source_file == "phe_276.12_allchr.txt",]$p.value)) + 1))
+dev.off()
+
+
+```
+\
+###############################################################################################
+# Redundant prepuce and phimosis/BXO
+###############################################################################################
+
+```{r}
+
+phe_604.1 <- plot_res[plot_res$source_file == "phe_604.1_allchr.txt",]
+
+phe_604.1$p.value[phe_604.1$p.value == 0] <- 1e-300
+
+```
+
+```{r}
+
+qq(phe_604.1[phe_604.1$source_file == "phe_604.1_allchr.txt",]$p.value, main = "QQ plot for EUR Phe 604.1")
+
+
+```
+
+```{r}
+
+chisq_rpp <- qchisq(1 - phe_604.1[phe_604.1$source_file == "phe_604.1_allchr.txt",]$p.value, 1)
+lambda_gc_rpp <- median(chisq_rpp) / qchisq(0.5, 1)
+lambda_gc_rpp
+
+
+```
+
+```{r}
+
+manhattan(phe_604.1[phe_604.1$source_file == "phe_604.1_allchr.txt",],
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerID",
+          p = "p.value",
+          main = "Manhattan Plot: EUR Phe 604.1",
+          ylim = c(0, max(-log10(phe_604.1[phe_604.1$source_file == "phe_604.1_allchr.txt",]$p.value)) + 1))
+
+
+```
+
+```{r}
+
+pdf("rpp_man.pdf", width = 8, height = 6)
+manhattan(phe_604.1[phe_604.1$source_file == "phe_604.1_allchr.txt",],
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerID",
+          p = "p.value",
+          main = "Redundant prepuce (604.1): EUR",
+          ylim = c(0, max(-log10(phe_604.1[phe_604.1$source_file == "phe_604.1_allchr.txt",]$p.value)) + 1))
+dev.off()
+
+
+```
+
+###############################################################################################
+# Cardiac congenital anomalies
+###############################################################################################
+
+```{r}
+
+qq(plot_res[plot_res$source_file == "phe_747.1_allchr.txt",]$p.value, main = "QQ plot for EUR Phe 747.1")
+
+
+```
+
+```{r}
+
+pdf("cca_QQ.pdf", width = 6, height = 6)
+qq(plot_res[plot_res$source_file == "phe_747.1_allchr.txt",]$p.value, main = "Cardiac Congenital Anomalies (747.1): EUR")
+dev.off()
+
+
+```
+
+```{r}
+
+chisq_cshs <- qchisq(1 - plot_res[plot_res$source_file == "phe_747.1_allchr.txt",]$p.value, 1)
+lambda_gc_cshs <- median(chisq_cshs) / qchisq(0.5, 1)
+lambda_gc_cshs
+
+
+```
+
+```{r}
+
+manhattan(plot_res[plot_res$source_file == "phe_747.1_allchr.txt",],
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerID",
+          p = "p.value",
+          main = "Manhattan Plot: EUR Phe 747.1",
+          ylim = c(0, max(-log10(plot_res[plot_res$source_file == "phe_747.1_allchr.txt",]$p.value)) + 1))
+
+
+```
+
+```{r}
+
+
+pdf("cca_man.pdf", width = 8, height = 6)
+manhattan(plot_res[plot_res$source_file == "phe_747.1_allchr.txt",],
+          chr = "CHR",
+          bp = "POS",,
+          snp = "MarkerID",
+          p = "p.value",
+          main = "Cardiac Congenital Anomalies (747.1): EUR",
+          ylim = c(0, max(-log10(plot_res[plot_res$source_file == "phe_747.1_allchr.txt",]$p.value)) + 1))
+
+dev.off()
+
+
+```
+
+###############################################################################################
+# PheWas plot
+###############################################################################################
+
+```{r}
+
+res$phecode <- str_extract(res$source_file, "(?<=phe_).*?(?=_allchr\\.txt)")
+
+```
+
+```{r}
+
+res <- res[res$source_file != "phe_604.1_allchr.txt",]
+
+```
+
+```{r}
+
+res <- res[res$p.value < 0.01,]
+
+```
+
+```{r}
+
+filtered_phe_man <- phewasManhattan(data.frame(phenotype = res$phecode, p = res$p.value), annotate.angle=0, significant.line = 5e-8)+ coord_cartesian(ylim = c(2, 9))
+
+```

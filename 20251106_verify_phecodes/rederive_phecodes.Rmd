@@ -1,0 +1,708 @@
+---
+title: "Check phenotype creation"
+output: html_document
+date: "2025-11-06"
+---
+
+###############################################################################################
+# library
+###############################################################################################
+
+```{r}
+
+library(bigrquery)
+library(tidyverse)
+library(dplyr)
+library(devtools)
+library(data.table)
+
+```
+
+###############################################################################################
+# read in data
+###############################################################################################
+
+icd to phecode map location:
+https://phewascatalog.org/phewas/#phe12
+
+arcus table info:
+https://chop.alationcloud.com/schema/18/
+
+```{r icd to phecode map}
+
+phecode_map <- read.csv("../20250801_arcus_phenotype_counts/Phecode_map_v1_2_icd9_icd10cm.csv")
+
+```
+
+```{r change phecode_map column names}
+
+colnames(phecode_map) <- c("code", "Flag", "ICDString", "Phecode", "PhecodeString", "PhecodeCategory")
+
+```
+
+```{r get project id}
+
+bq_auth()
+project_id <- bq_projects()[1]
+
+```
+
+```{r encounter}
+
+query_encounter_diagnosis <- "
+SELECT
+  encounter_id,
+  pat_id,
+  effective_age
+FROM
+  arcus.encounter
+"
+encounter_df <- bq_project_query(project_id, query_encounter_diagnosis) %>%
+  bq_table_download(bigint = "integer64") %>%
+  as_tibble()
+head(encounter_df)
+
+```
+
+```{r encounter diagnosis}
+
+query_encounter_diagnosis <- "
+SELECT
+  *
+FROM
+  arcus.encounter_diagnosis
+"
+encounter_diagnosis_df <- bq_project_query(project_id, query_encounter_diagnosis) %>%
+  bq_table_download(bigint = "integer64") %>%
+  as_tibble()
+head(encounter_diagnosis_df)
+
+```
+
+```{r encounter information icd 9}
+
+query_diag_icd9 <- "
+SELECT
+  *
+FROM
+  arcus.diagnosis_icd9
+"
+diag_icd9_df <- bq_project_query(project_id, query_diag_icd9) %>%
+  bq_table_download(bigint = "integer64") %>%
+  as_tibble()
+head(diag_icd9_df)
+
+```
+
+```{r encounter information icd 10}
+
+query_diag_icd10 <- "
+SELECT
+  *
+FROM
+  arcus.diagnosis_icd10
+"
+diag_icd10_df <- bq_project_query(project_id, query_diag_icd10) %>%
+  bq_table_download(bigint = "integer64") %>%
+  as_tibble()
+head(diag_icd10_df)
+
+```
+
+```{r pat sex }
+
+query_pat_sex <- "
+SELECT
+  pat_id,
+  sex
+FROM
+  arcus.patient
+"
+pat_df <- bq_project_query(project_id, query_pat_sex) %>%
+  bq_table_download(bigint = "integer64") %>%
+  as_tibble()
+
+head(pat_df)
+
+```
+
+###############################################################################################
+# check icd differences and create 
+###############################################################################################
+
+```{r icd9 & icd10 overlap}
+
+length(intersect(diag_icd10_df$dx_id, diag_icd9_df$dx_id))
+
+```
+1,241,834
+
+```{r length icd9}
+
+length(diag_icd9_df$dx_id)
+
+```
+1742024
+
+```{r length icd10}
+
+length(diag_icd10_df$dx_id)
+
+```
+1479521
+
+```{r unique icd10's}
+
+icd10_df <- unique(diag_icd10_df[,c("dx_id", "code")])
+
+icd10_df$icd <- 10
+
+```
+
+```{r add phecode info to icd10}
+
+icd10_df <- left_join(icd10_df, phecode_map[phecode_map$Flag == 10, ], by = "code")
+
+```
+
+```{r unique icd9's}
+
+icd9_df <- unique(diag_icd9_df[,c("dx_id", "code")])
+
+icd9_df$icd <- 9
+
+dim(icd9_df)
+
+```
+[1] 1742024       3
+
+```{r get icd9 not in icd10}
+
+icd9_df <- icd9_df[!(icd9_df$dx_id %in% icd10_df$dx_id), ]
+
+
+dim(icd9_df)
+
+```
+260724      3
+
+```{r add phecode info to icd9}
+
+icd9_df <- left_join(icd9_df, phecode_map[phecode_map$Flag == 9, ], by = "code")
+
+```
+
+```{r combine icd dfs}
+
+icd <- rbind(icd10_df, icd9_df)
+
+```
+
+###############################################################################################
+# create master table
+###############################################################################################
+
+encounter_df <- left_join(encounter_df,)
+
+```{r sex to enounter}
+
+encounter_df <- left_join(encounter_df,pat_df, by = "pat_id")
+
+```
+
+```{r encounter diag to encounter}
+
+encounter_df <- left_join(encounter_df, encounter_diagnosis_df[,c("encounter_id", "dx_id", "dx_type")], by = "encounter_id")
+
+```
+
+```{r multiple dx id by encounter}
+
+dim(encounter_df)
+
+```
+1] 9300819       6
+
+```{r icd df to encounter}
+
+encounter_df <- left_join(encounter_df, icd, by = "dx_id")
+
+dim(encounter_df)
+
+```
+9453762
+
+```{r remove rows with no dx_id}
+
+encounter_df <- encounter_df[!is.na(encounter_df$dx_id),]
+
+dim(encounter_df)
+
+```
+5275995
+
+```{r save encounter}
+
+write.csv(encounter_df, "total_enounter_icd_phe.csv")
+
+```
+
+```{r}
+
+encounter_df <- read.csv("total_enounter_icd_phe.csv")
+
+```
+
+```{r}
+
+unique_diag_indv_count <- encounter_df %>%
+  distinct(pat_id, Phecode) %>%  
+  nrow()                        
+
+```
+
+###############################################################################################
+# total phecodes table
+###############################################################################################
+
+if you add encounter, there are more entries - multiple encounters per day
+```{r phecodes df}
+
+phecodes <- unique(encounter_df[, c("pat_id", "effective_age", "sex", "Phecode", "PhecodeString", "PhecodeCategory")])
+
+dim(phecodes)
+
+```
+4040823
+
+```{r remove nas}
+
+phecodes <- phecodes[!(is.na(phecodes$Phecode)), ]
+
+dim(phecodes)
+
+```
+3677530
+
+```{r save phecodes}
+
+write.csv(phecodes, "phecodes_total.csv")
+
+```
+
+```{r}
+
+phecodes <- read.csv("phecodes_total.csv")
+
+```
+
+###############################################################################################
+# number of diagnoses phecode-indv
+###############################################################################################
+
+```{r count phecodes}
+
+phecodes_count <- phecodes %>%
+  group_by(pat_id, Phecode) %>% 
+  summarise(count = n(), .groups = "drop") %>%   # count phecodes per patient
+  pivot_wider(
+    names_from = Phecode,
+    values_from = count,
+    values_fill = 0   # fill missing combos with 0
+  )
+
+```
+
+```{r count phecodes}
+
+write.csv(phecodes_count, "phecodes_counts_by_indv.csv")
+
+```
+
+###############################################################################################
+# binary phecode counts
+###############################################################################################
+
+```{r diagnosis binary}
+
+phecodes_binary <- phecodes %>%
+  group_by(pat_id, Phecode) %>%
+  summarise(has_dx = 1, .groups = "drop") %>%   # presence only
+  pivot_wider(
+    names_from = Phecode,
+    values_from = has_dx,
+    values_fill = 0   # fill missing combos with 0
+  )
+
+
+```
+
+```{r phecodes binary}
+
+write.csv(phecodes_binary, "phecodes_binary_by_indv.csv")
+
+```
+
+###############################################################################################
+# which encounter
+###############################################################################################
+
+```{r add order by effective_age}
+
+
+phecodes <- phecodes %>%
+  group_by(pat_id) %>%
+  arrange(effective_age, .by_group = TRUE) %>%   # optional, just for readability
+  mutate(visit_order = dense_rank(effective_age)) %>%
+  ungroup()
+
+
+```
+
+```{r save order}
+
+write.csv(phecodes, "phecodes_order.csv")
+
+```
+
+```{r find mean of number of visits}
+
+phecodes %>%
+  group_by(pat_id) %>%
+  summarise(max_visit = max(visit_order)) %>%
+  summarise(mean_max_visit = mean(max_visit))
+
+```
+64.12763
+
+```{r find mean of first visit}
+
+phecodes %>%
+  group_by(pat_id) %>%
+  summarise(first_visit = min(effective_age)) %>%
+  summarise(mean_first_visit = mean(first_visit))
+
+```
+
+1872/365.25
+[1] 5.125257
+
+
+```{r}
+
+phecodes <- read.csv("phecodes_order.csv")
+
+```
+
+###############################################################################################
+# phecodes to 1 digit after the "."
+###############################################################################################
+
+```{r}
+
+trim_one_decimal <- function(x) floor(x * 10) / 10
+
+phecodes$ru_phe <- trim_one_decimal(phecodes$Phecode)
+
+```
+
+```{r count phecodes}
+
+phecodes_count_ru <- phecodes %>%
+  group_by(pat_id, ru_phe) %>% 
+  summarise(count = n(), .groups = "drop") %>%   # count phecodes per patient
+  pivot_wider(
+    names_from = ru_phe,
+    values_from = count,
+    values_fill = 0   # fill missing combos with 0
+  )
+
+```
+
+```{r count phecodes}
+
+write.csv(phecodes_count_ru, "phecodes_counts_by_indv_ru.csv")
+
+```
+
+```{r}
+
+phecodes_count_ru <- read.csv("phecodes_counts_by_indv_ru.csv")
+
+```
+
+###############################################################################################
+# top level phenos
+###############################################################################################
+
+```{r}
+
+phecodes <- read.csv("phecodes_order.csv")
+
+```
+
+```{r}
+
+phecodes$Phecode <- floor(phecodes$Phecode)
+
+```
+
+```{r}
+
+phecodes <- unique(phecodes[,c("pat_id", "effective_age", "sex", "Phecode")])
+
+```
+
+```{r count phecodes}
+
+phecodes_count_tl <- phecodes %>%
+  group_by(pat_id, Phecode) %>% 
+  summarise(count = n(), .groups = "drop") %>%   # count phecodes per patient
+  pivot_wider(
+    names_from = Phecode,
+    values_from = count,
+    values_fill = 0   # fill missing combos with 0
+  )
+
+```
+
+```{r count phecodes}
+
+write.csv(phecodes_count_tl, "phecodes_counts_by_indv_top.csv")
+
+```
+
+###############################################################################################
+# asd df
+###############################################################################################
+
+```{r subset to just asd}
+
+asd_df <- phecodes[phecodes$Phecode == "313.3", ]
+  
+```
+
+icd9 has category as Developmental/behavioral disorders -- why and how to fix?
+
+```{r save asd df}
+
+write.csv(asd_df, "asd_df.csv", row.names = FALSE)
+
+```
+
+```{r}
+
+asd_df <- read.csv("asd_df.csv")
+
+```
+
+```{r list of asd indv}
+
+asd_indv <- unique(asd_df$pat_id)
+
+length(asd_indv)
+
+```
+5530
+
+```{r save asd indv}
+
+write.csv(asd_indv, "asd_indv.csv", row.names = FALSE)
+
+```
+
+```{r get asd from non-first encounter}
+
+asd_non_first <- asd_df[asd_df$visit_order != 1,]
+
+```
+
+```{r list of asd indv not diagnosed on first encounter}
+
+asd_nf_indv <- unique(asd_non_first$pat_id)
+
+length(asd_nf_indv)
+
+```
+5405
+125 less
+
+```{r save asd non-first indv}
+
+write.csv(asd_nf_indv, "asd_indv_nfv.csv", row.names = FALSE)
+
+```
+
+```{r}
+
+asd_nf_indv <- read.csv("asd_indv_nfv.csv")
+
+```
+
+###############################################################################################
+# earliest diagnosis by phenotype
+###############################################################################################
+
+```{r phecode-indv column}
+
+phecodes$phe_indv <- paste(phecodes$pat_id, phecodes$Phecode, sep = "_")
+  
+```
+
+```{r earliest diagnosis by phecode}
+
+phecodes_earliest <- phecodes %>%
+  group_by(phe_indv) %>%
+  slice_min(order_by = effective_age, n = 1, with_ties = FALSE) %>%
+  ungroup()
+
+
+```
+
+```{r save earliest diagnosis df}
+
+write.csv(phecodes_earliest[,c("pat_id", "effective_age", "sex", "Phecode", "PhecodeString", "PhecodeCategory", "visit_order")], "earliest_phecode_diag.csv")
+
+```
+
+###############################################################################################
+# unifrom phecode categories from ICD10 mappings
+###############################################################################################
+
+```{r}
+
+phecodes <- read.csv("phecodes_order.csv")
+
+```
+
+```{r get category mappings for icd0 phecodes}
+
+icd10_phe_cat <- unique(phecode_map[phecode_map$Flag == 10 ,c("Phecode", "PhecodeString", "PhecodeCategory")])
+
+```
+
+```{r phecodes with icd10 categories}
+
+phecodes <- left_join(phecodes[,c("pat_id", "effective_age", "sex", "visit_order", "Phecode" )], icd10_phe_cat, by = "Phecode")
+  
+```
+
+```{r save phecodes with icd10 cat}
+
+write.csv(phecodes, "phecodes_icd10_cat.csv")
+
+```
+
+```{r find out what diagnoses were dropped in the conversion}
+
+# First, make a subset of phecodes where PhecodeCategory is NA
+phe_missing_cat <- phecodes[is.na(phecodes$PhecodeCategory), ]
+
+cat_dropped_phe <- phe_missing_cat %>%
+  group_by(PhecodeString) %>%
+  summarise(
+    Freq = n(),  # same as table() frequency
+    UniquePatIDs = n_distinct(pat_id)
+  ) %>%
+  as.data.frame()
+
+
+```
+
+```{r saved dropped phecode table}
+
+write.csv(cat_dropped_phe, "dropped_phe_icd10_cat.csv")
+
+```
+
+###############################################################################################
+# asd encounter df
+###############################################################################################
+
+```{r}
+
+first_visit <- unique(phecodes[which(phecodes$visit_order == 1),c("pat_id", "effective_age", "visit_order")])
+
+first_visit$id_age <- paste(first_visit$pat_id, first_visit$effective_age, sep = "_")
+
+```
+
+```{r}
+
+asd_encounter_df <- encounter_df[which(encounter_df$Phecode == 313.3),]
+
+```
+
+```{r}
+
+asd_encounter_df <- asd_encounter_df %>%
+  group_by(pat_id) %>%
+  arrange(effective_age, .by_group = TRUE) %>%   # optional, just for readability
+  mutate(visit_order = dense_rank(effective_age)) %>%
+  ungroup()
+
+```
+
+```{r}
+
+asd_encounter_min <- asd_encounter_df[ 
+  ave(asd_encounter_df$effective_age, asd_encounter_df$pat_id, FUN = min) == asd_encounter_df$effective_age, 
+]
+
+```
+
+```{r}
+
+asd_encounter_min$id_age <- paste(asd_encounter_min$pat_id, asd_encounter_min$effective_age, sep = "_")
+
+```
+
+```{r}
+
+asd_encounter_min <- asd_encounter_min[!(asd_encounter_min$id_age %in% first_visit$id_age), ]
+
+```
+
+```{r}
+
+asd_encounter_min_type_num <- as.data.frame(table(asd_encounter_min$pat_id))
+
+```
+
+```{r remove those with multiple visits on first diagnosis dat}
+
+asd_encounter_min <- asd_encounter_min[asd_encounter_min$pat_id %in% asd_encounter_min_type_num[asd_encounter_min_type_num$Freq == 1,]$Var1, ]
+
+```
+
+table(table(asd_encounter_min$pat_id))
+
+   1 
+4265 
+> table(asd_encounter_min$dx_type)
+
+ Admission  Emergency  Inpatient Outpatient 
+       101          1        570       3593 
+       
+Most individuals are being diagnosed in outpatient for their first time
+
+###############################################################################################
+# oldest diagnosis - proxy for age
+###############################################################################################
+
+```{r}
+
+max_age_df <- phecodes %>%
+  group_by(pat_id) %>%
+  summarize(max_effective_age = max(effective_age, na.rm = TRUE))
+
+# View result
+head(max_age_df)
+
+```
+
+```{r}
+
+write_csv(max_age_df, "max_phecode_age.csv")
+
+```

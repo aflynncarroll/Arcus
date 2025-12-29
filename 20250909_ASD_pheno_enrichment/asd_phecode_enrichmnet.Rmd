@@ -1,0 +1,985 @@
+---
+title: "Look for phenotype enrichment with ASD"
+output: html_document
+date: "2025-09-09"
+---
+
+move files to /mnt/arcus/lab/project/data/interim/phenotype_files
+
+###############################################################################################
+# library
+###############################################################################################
+
+```{r packages}
+
+library(bigrquery)
+library(tidyverse)
+library(dplyr)
+library(devtools)
+library(data.table)
+library(ggplot2)
+library(cowplot)
+
+```
+
+###############################################################################################
+# read in data
+###############################################################################################
+
+```{r}
+
+fam_relations <- read.csv("/mnt/arcus/data/manifests/family_relationships.csv")
+
+```
+                 
+```{r read phenotypes}
+
+phecodes <- read.csv( "../20250908_phenotypes_v2/phecodes_icd10_cat.csv")
+
+```
+
+```{r read asd list}
+
+asd_indv <- read.csv("../20250908_phenotypes_v2/asd_indv.csv")
+
+asd_indv <- asd_indv$x
+
+```
+
+```{r read asd restrictive list}
+
+asd_nf_indv <- read.csv("../20250908_phenotypes_v2/asd_indv_nfv.csv")
+
+asd_nf_indv <- asd_nf_indv$x
+
+```
+
+```{r get earliest phecodes from previous}
+
+phecodes_earliest <- read.csv("../20250908_phenotypes_v2/earliest_phecode_diag.csv")
+
+```
+
+```{r}
+
+phecode_map <- read.csv("../20250801_arcus_phenotype_counts/Phecode_map_v1_2_icd9_icd10cm.csv")
+
+```
+
+```{r}
+
+phecode_counts <- read.csv("../20250908_phenotypes_v2/phecodes_counts_by_indv.csv")
+
+```
+
+###############################################################################################
+# family relationships
+###############################################################################################
+
+```{r}
+
+father_set <- unique(fam_relations[fam_relations$relative_role == "biological father",]$participant_id)
+
+mother_set <- unique(fam_relations[fam_relations$relative_role == "biological mother",]$participant_id)
+
+```
+length(unique(fam_relations$participant_id))
+[1] 27
+only 27 individuals with parent information
+
+> table(fam_relations$relative_role)
+
+biological brother  biological father  biological mother 
+                 1                 16                 26 
+                 
+###############################################################################################
+# format data
+###############################################################################################
+
+```{r get unique phecode definitions}
+
+#phe_def <- unique(phecodes[,c("Phecode", "PhecodeString", "PhecodeCategory")])
+
+phe_def <- unique(phecode_map[,c("Phecode", "PhecodeString")])
+
+```
+
+```{r unique diags}
+
+unique_phe <- unique(phecodes[,c("pat_id", "Phecode")])
+
+```
+
+```{r phecodes_earliest numbers}
+
+phecodes_earliest$effective_age = as.numeric(phecodes_earliest$effective_age)
+
+phecodes_earliest$visit_order = as.numeric(phecodes_earliest$visit_order)
+
+```
+
+###############################################################################################
+# enrichment analysis
+###############################################################################################
+
+```{r enrichmnet function}
+
+enrichment_function <- function(df, case_ids, phecode_col = "Phecode", pat_col = "pat_id") {
+  
+  # Ensure unique patient-phecode pairs
+  df <- df %>%
+    distinct(.data[[pat_col]], .data[[phecode_col]])
+  
+  all_patients <- unique(df[[pat_col]])
+  controls <- setdiff(all_patients, case_ids)
+  
+  codes <- unique(df[[phecode_col]])
+  
+  # Initialize results
+  results <- data.frame(
+    Phecode = character(),
+    cases_with_code = integer(),
+    cases_without_code = integer(),
+    controls_with_code = integer(),
+    controls_without_code = integer(),
+    odds_ratio = numeric(),
+    p_value = numeric(),
+    stringsAsFactors = FALSE
+  )
+  
+  for (code in codes) {
+    pats_with_code <- df %>%
+      filter(.data[[phecode_col]] == code) %>%
+      pull(.data[[pat_col]]) %>%
+      unique()
+    
+    a <- sum(case_ids %in% pats_with_code)
+    b <- length(case_ids) - a
+    c <- sum(controls %in% pats_with_code)
+    d <- length(controls) - c
+    
+    # Apply Haldane-Anscombe correction if needed
+    if (any(c(a, b, c, d) == 0)) {
+      a <- a + 0.5
+      b <- b + 0.5
+      c <- c + 0.5
+      d <- d + 0.5
+    }
+    
+    # Odds ratio
+    or <- (a * d) / (b * c)
+    
+    tbl <- matrix(c(a, b, c, d), nrow = 2, byrow = TRUE)
+    test <- suppressWarnings(chisq.test(tbl))  # suppress warnings about small counts
+    
+    results <- rbind(results, data.frame(
+      Phecode = code,
+      cases_with_code = a,
+      cases_without_code = b,
+      controls_with_code = c,
+      controls_without_code = d,
+      odds_ratio = or,
+      p_value = test$p.value,
+      stringsAsFactors = FALSE
+    ))
+  }
+  
+  return(results)
+}
+
+
+```
+
+```{r asd total enrichmnet}
+
+asd_enrich <- enrichment_function(unique_phe, case_ids = asd_indv, phecode_col = "Phecode", pat_col = "pat_id")
+
+```
+
+> .05/1651
+[1] 3.028468e-05
+
+```{r add phecode information}
+
+asd_enrich <- left_join(asd_enrich, phe_def, by = "Phecode")
+
+```
+
+```{r find number of phenotypes meeting Bonferroni correction}
+
+dim(asd_enrich[asd_enrich$p_value <= (.05/1651),])
+
+```
+[1] 309   9
+
+```{r asd non-first-visit enrichmnet}
+
+asd_enrich_nfv <- enrichment_function(unique_phe, case_ids = asd_nf_indv, phecode_col = "Phecode", pat_col = "pat_id")
+
+```
+
+```{r add phecode information}
+
+asd_enrich_nfv <- left_join(asd_enrich_nfv, phe_def, by = "Phecode")
+
+```
+
+```{r find number of phenotypes meeting Bonferroni correction}
+
+dim(asd_enrich_nfv[asd_enrich_nfv$p_value <= (.05/1651),])
+
+```
+[1] 314   9
+
+```{r save enriched phenos}
+
+write_csv(asd_enrich, "asd_enriched_phenos.csv")
+
+```
+
+```{r get unique top level diagnoses}
+
+unique_phe$Phecode_top <- sub("\\..*", "", unique_phe$Phecode)
+
+unique_phe_top <- unique(unique_phe[,c("pat_id", "Phecode_top")])
+
+```
+
+```{r asd top level enrichmnet}
+
+asd_enrich_top <- enrichment_function(unique_phe_top, case_ids = asd_indv, phecode_col = "Phecode_top", pat_col = "pat_id")
+
+```
+
+```{r add phecode information to top phe}
+
+asd_enrich_top$Phecode <- as.numeric(asd_enrich_top$Phecode)
+
+
+asd_enrich_top <- left_join(asd_enrich_top, phe_def, by = "Phecode")
+
+```
+
+```{r}
+
+phe_diag_indv <- as.data.frame(table(unique_phe_top$Phecode_top))
+
+```
+
+```{r}
+
+colnames(phe_diag_indv) <- c("Phecode", "diagnosed_individuals")
+
+phe_diag_indv$Phecode <- as.numeric(as.character(phe_diag_indv$Phecode))
+
+phe_diag_indv <- left_join(phe_diag_indv, phe_def, by = "Phecode")
+
+```
+
+###############################################################################################
+# earliest diagnosis
+###############################################################################################
+
+```{r first diagnosis}
+
+record_earliest <- phecodes %>%
+  group_by(pat_id) %>%
+  slice_min(order_by = effective_age, with_ties = FALSE) %>%
+  ungroup()
+
+```
+
+```{r add phecode information to earliest phe}
+
+record_earliest_counts <- record_earliest %>%
+  count(Phecode, name = "n")
+
+record_earliest_counts <- left_join(record_earliest_counts, phe_def, by = "Phecode")
+
+```
+
+# look at first diagnosis that has a category
+# assume those that do not are more test related
+
+```{r subset phecodes to categorized codes}
+
+phecodes_phecats <- phecodes[!is.na(phecodes$PhecodeCategory), ]
+
+```
+
+```{r first diagnosis}
+
+record_earliest_cats <- phecodes_phecats %>%
+  group_by(pat_id) %>%
+  slice_min(order_by = effective_age, with_ties = FALSE) %>%
+  ungroup()
+
+```
+
+```{r add phecode information to earliest phe}
+
+record_earliest_cats_counts <- record_earliest_cats %>%
+  count(Phecode, name = "n")
+
+record_earliest_cats_counts <- left_join(record_earliest_cats_counts, phe_def, by = "Phecode")
+
+```
+
+```{r save tables}
+
+write_csv(record_earliest_counts, "record_earliest_counts.csv")
+
+write_csv(record_earliest_cats_counts, "record_earliest_diagnosis_counts.csv")
+
+```
+
+```{r}
+
+record_earliest_counts <- read.csv <- read.csv("record_earliest_counts.csv")
+
+record_earliest_cats_counts <- read.csv("record_earliest_diagnosis_counts.csv")
+
+```
+
+```{r}
+
+# Add a grouping column for ASD status
+record_earliest <- record_earliest %>%
+  mutate(asd_status = case_when(
+    pat_id %in% asd_indv ~ "ASD",
+    TRUE ~ "Non-ASD"
+  ))
+
+# 1. Plot for all patients
+p_all <- ggplot(record_earliest, aes(x = effective_age)) +
+  coord_cartesian(ylim = c(0, 200)) +    
+  geom_histogram(binwidth = 30, fill = "steelblue", color = "steelblue") +
+  labs(title = "Distribution of Effective Age (All Patients)",
+       x = "Effective Age", y = "Frequency")
+
+# 2. Plot for ASD patients
+p_asd <- record_earliest %>%
+  filter(asd_status == "ASD") %>%
+  ggplot(aes(x = effective_age)) +
+  coord_cartesian(ylim = c(0, 200)) + 
+  geom_histogram(binwidth = 1, fill = "tomato", color = "tomato") +
+  labs(title = "Distribution of Effective Age (ASD Patients)",
+       x = "Effective Age", y = "Frequency")
+
+# 3. Plot for Non-ASD patients
+p_non_asd <- record_earliest %>%
+  filter(asd_status == "Non-ASD") %>%
+  ggplot(aes(x = effective_age)) +
+  coord_cartesian(ylim = c(0, 200)) + 
+  geom_histogram(binwidth = 1, fill = "seagreen", color = "seagreen") +
+  labs(title = "Distribution of Effective Age (Non-ASD Patients)",
+       x = "Effective Age", y = "Frequency")
+
+
+```
+
+```{r}
+
+plot_grid(p_all, p_asd, p_non_asd, labels = c("A", "B", "C"), ncol = 3)
+
+```
+> mean(record_earliest[record_earliest$asd_status == "ASD",]$effective_age)
+[1] 1121.458
+> mean(record_earliest[record_earliest$asd_status == "Non-ASD",]$effective_age)
+[1] 2150.655
+
+###############################################################################################
+# time to diagnosis
+###############################################################################################
+
+# need to remove individuals with a particular diagnosis on visit 1
+```{r read phenotypes}
+
+phecodes <- read.csv( "../20250908_phenotypes_v2/phecodes_icd10_cat.csv")
+
+```
+
+```{r setup non-first_df}
+
+#phecodes_non_v1 <-phecodes[phecodes$visit_order != 1, ]
+
+#phecodes_non_v1$phe_indv <- paste(phecodes_non_v1$pat_id, phecodes_non_v1$Phecode, sep = "_")
+
+```
+
+```{r earliest diagnosis by phecode}
+
+phecodes_earliest_nv1 <- phecodes_earliest[phecodes_earliest$visit_order != 1,]
+
+```
+
+```{r make earliest diag df}
+
+earliest_diag <- record_earliest[,c("pat_id", "effective_age")]
+
+colnames(earliest_diag) <- c("pat_id", "first_diag")
+
+```
+
+```{r add first diag}
+
+phecodes_earliest_nv1 <- left_join(phecodes_earliest_nv1, earliest_diag, by = "pat_id")
+
+```
+
+```{r diag time in system}
+
+phecodes_earliest_nv1$diag_tis <- phecodes_earliest_nv1$effective_age - phecodes_earliest_nv1$first_diag
+
+```
+
+```{r}
+
+mean(phecodes_earliest_nv1[phecodes_earliest_nv1$Phecode == 313.3,]$diag_tis)
+
+```
+
+```{r}
+
+mean(phecodes_earliest_nv1[phecodes_earliest_nv1$Phecode != 313.3,]$diag_tis)
+
+```
+
+```{r}
+
+median(phecodes_earliest_nv1[phecodes_earliest_nv1$Phecode == 313.3,]$diag_tis)
+
+```
+
+```{r}
+
+median(phecodes_earliest_nv1[phecodes_earliest_nv1$Phecode != 313.3,]$diag_tis)
+
+```
+
+```{r}
+
+ggplot(phecodes_earliest_nv1) +
+  geom_density(
+    aes(
+      x = diag_tis,
+      fill = Phecode == 313.3   # TRUE if 313.3, FALSE otherwise
+    ),
+    alpha = 0.5
+  ) +
+  labs(
+    y = "Density",
+    x = "Time in System",
+    fill = "Phecode"
+  ) +
+  scale_fill_manual(
+    values = c("TRUE" = "#BCDB24", "FALSE" = "#24BCDB"),
+    labels = c("Other", "ASD")
+  ) 
+
+
+```
+
+```{r}
+
+ggplot(phecodes_earliest_nv1[!is.na(phecodes_earliest_nv1$PhecodeCategory),]) +
+  geom_density(
+    aes(
+      x = diag_tis,
+      fill = Phecode == 313.3   # TRUE if 223, FALSE otherwise
+    ),
+    alpha = 0.5
+  ) +
+  labs(
+    y = "Density",
+    x = "Time in System",
+    fill = "Phecode"
+  ) +
+  scale_fill_manual(
+    values = c("TRUE" = "#BCDB24", "FALSE" = "#24BCDB"),
+    labels = c("Other", "ASD")
+  ) 
+
+
+```
+
+```{r last diagnosis}
+
+phecodes_latest <- phecodes %>%
+  group_by(pat_id) %>%
+  slice_max(order_by = effective_age, with_ties = FALSE) %>%
+  ungroup()
+
+```
+
+```{r get last diag df to join}
+
+phecodes_latest_df <- phecodes_latest[,c("pat_id", "effective_age")]
+
+colnames(phecodes_latest_df) <- c("pat_id", "last_diag")
+  
+```
+
+```{r}
+
+asd_earliest_nv1 <- phecodes_earliest_nv1[phecodes_earliest_nv1$Phecode == 313.3,]
+
+```
+
+```{r join last diag df}
+
+#record_earliest_nv1 <- left_join(record_earliest_nv1, phecodes_latest_df, by = "pat_id")
+
+```
+
+```{r total time in system}
+
+#record_earliest_nv1$total_tis <- record_earliest_nv1$last_diag - record_earliest_nv1$first_diag
+  
+```
+
+```{r}
+
+earliest_diag <- left_join(earliest_diag, phecodes_latest_df, by = "pat_id")
+
+```
+
+```{r total time in system}
+
+earliest_diag$total_tis <- earliest_diag$last_diag - earliest_diag$first_diag
+
+earliest_diag$total_tis <- earliest_diag$total_tis + 1
+  
+```
+
+```{r add asd information}
+
+earliest_diag$asd <- ifelse(earliest_diag$pat_id %in% asd_indv, "ASD", "No ASD")
+
+```
+
+```{r plot }
+
+total_tis <- ggplot(earliest_diag) +
+  # Overall distribution (black outline)
+  geom_density(aes(x = total_tis), 
+               color = "#DB24BC", 
+               linewidth = 1, 
+               alpha = 0.3) +
+  # Group-specific distributions
+  geom_density(aes(x = total_tis, fill = factor(asd)), 
+               alpha = 0.5) +
+  labs(y = "Density", x = "Time in System", fill = "ASD") +
+  scale_fill_manual(
+    values = c("#24BCDB", "#BCDB24")
+  )
+
+```
+
+```{r}
+
+ggsave("total_tis.pdf", plot = total_tis, width = 8, height = 6, units = "in")
+
+```
+
+```{r}
+
+first_diag_plot <- ggplot(earliest_diag) +
+  # Overall distribution (black outline)
+  geom_density(aes(x = first_diag), 
+               color = "#DB24BC", 
+               linewidth = 1, 
+               alpha = 0.3) +
+  # Group-specific distributions
+  geom_density(aes(x = first_diag, fill = factor(asd)), 
+               alpha = 0.5) +
+  labs(y = "Density", x = "First Diagnosis", fill = "ASD") +
+  scale_fill_manual(
+    values = c("#24BCDB", "#BCDB24")
+  )
+```
+
+```{r}
+
+ggsave("first_diag_plot.pdf", plot = first_diag_plot, width = 8, height = 6, units = "in")
+
+```
+
+```{r}
+first_diag_plot_zoom <- ggplot(earliest_diag) +
+  # Overall distribution (black outline)
+  geom_density(aes(x = first_diag), 
+               color = "#DB24BC", 
+               linewidth = 1, 
+               alpha = 0.3) +
+  # Group-specific distributions
+  geom_density(aes(x = first_diag, fill = factor(asd)), 
+               alpha = 0.5) +
+  labs(y = "Density", x = "First Diagnosis", fill = "ASD") +
+  scale_fill_manual(
+    values = c("#24BCDB", "#BCDB24")
+  )+
+coord_cartesian(xlim = c(0, 5000)) 
+
+```
+
+```{r}
+
+ggsave("first_diag_plot_zoom.pdf", plot = first_diag_plot_zoom, width = 8, height = 6, units = "in")
+
+```
+
+###############################################################################################
+# ASD df
+###############################################################################################
+
+```{r}
+
+asd_df <- phecodes[phecodes$Phecode == 313.3, ]
+
+```
+
+```{r}
+
+asd_indv <- unique(asd_df$pat_id)
+
+```
+
+```{r}
+
+length(unique(asd_df$pat_id))
+
+```
+
+5530
+
+```{r}
+
+multiple_asd <- asd_df %>%
+  group_by(pat_id) %>%
+  summarise(n_ages = n_distinct(effective_age)) %>%
+  filter(n_ages > 1)
+
+```
+
+```{r}
+length(unique(multiple_asd$pat_id))
+
+```
+4919
+
+```{r}
+
+fv_asd <- unique(asd_df[asd_df$visit_order == 1, ]$pat_id)
+
+```
+
+```{r}
+
+asd_df_nfv <- asd_df[!(asd_df$pat_id %in% fv_asd),]
+
+```
+
+```{r}
+
+earliest_asd_nfv <- asd_df_nfv %>%
+  group_by(pat_id) %>%
+  filter(visit_order == min(visit_order, na.rm = TRUE)) %>%
+  ungroup()
+
+```
+
+```{r}
+
+first_diag_asd_plot <- ggplot(earliest_asd_nfv) +
+  # Overall distribution (black outline)
+  geom_density(aes(x = effective_age), 
+               color = "#BCDB24", 
+               linewidth = 1, 
+               alpha = 0.3) +
+  # Group-specific distributions
+  geom_density(aes(x = effective_age, fill = factor(sex)), 
+               alpha = 0.5) +
+  labs(y = "Density", x = "First ASD Diagnosis", fill = "Sex") +
+  scale_fill_manual(
+    values = c("#DB24BC", "#24BCDB")
+  )
+
+first_diag_asd_plot
+
+```
+
+```{r}
+
+ggsave("first_diag_asd_plot.pdf", plot = first_diag_asd_plot, width = 8, height = 6, units = "in")
+
+```
+
+###############################################################################################
+# intellectual disability
+###############################################################################################
+
+```{r find 315 phecodes}
+
+phecodes %>%
+  filter(startsWith(as.character(Phecode), "315")) %>%
+  distinct(Phecode, PhecodeString, PhecodeCategory)
+
+```
+  Phecode                     PhecodeString  PhecodeCategory
+1   315.2      Speech and language disorder mental disorders
+2   315.0 Develomental delays and disorders mental disorders
+3   315.3                Mental retardation mental disorders
+4   315.1                 Learning disorder mental disorders
+
+```{r get individuals with id}
+
+id_ids <-phecodes %>%
+  filter(startsWith(as.character(Phecode), "315")) %>%
+  distinct(pat_id)
+
+```
+
+```{r}
+
+id_counts <- phecodes %>%
+  filter(startsWith(as.character(Phecode), "315")) %>%
+  group_by(Phecode) %>%
+  summarise(n_patients = n_distinct(pat_id), .groups = "drop")
+
+id_counts
+```
+
+```{r unlist id_ids}
+
+id_ids <- unlist(id_ids)
+
+```
+
+```{r asd with id}
+
+asd_p_id <- intersect(asd_indv, id_ids)
+
+length(asd_p_id)
+
+```
+
+4731
+
+length(asd_indv)
+[1] 5530
+
+
+###############################################################################################
+# adhd
+###############################################################################################
+
+```{r}
+
+adhd_ids <- unique(phecodes[phecodes$Phecode == 313.1,]$pat_id)
+
+```
+
+```{r}
+
+asd_p_adhd <- intersect(asd_indv, adhd_ids)
+
+length(asd_p_adhd)
+
+```
+
+###############################################################################################
+# bipolar
+###############################################################################################
+
+```{r}
+
+bp_ids <- unique(phecodes[phecodes$Phecode == 296.1,]$pat_id)
+
+```
+123
+
+```{r}
+
+asd_p_bp <- intersect(asd_indv, bp_ids)
+
+```
+74
+
+###############################################################################################
+# schizophrenia
+###############################################################################################
+
+```{r}
+
+scz_ids <- unique(phecodes[phecodes$Phecode == 295,]$pat_id)
+
+length(scz_ids)
+```
+2
+
+```{r}
+
+asd_p_scz <- intersect(asd_indv, scz_ids)
+
+```
+0
+
+
+###############################################################################################
+# depression
+###############################################################################################
+
+no 296.2
+
+```{r}
+
+dep_ids <- unique(phecodes[phecodes$Phecode == 296.22,]$pat_id)
+
+length(dep_ids)
+
+```
+447
+
+```{r}
+
+asd_p_dep <- intersect(asd_indv, dep_ids)
+
+```
+135
+
+###############################################################################################
+# epilepsy
+###############################################################################################
+
+```{r get individuals with id}
+
+ep_ids <-phecodes %>%
+  filter(startsWith(as.character(Phecode), "345")) %>%
+  distinct(pat_id)
+
+ep_ids <- unlist(ep_ids)
+
+```
+
+```{r asd with ep}
+
+asd_p_ep <- intersect(asd_indv, ep_ids)
+
+length(asd_p_ep)
+
+```
+
+###############################################################################################
+# anxiety
+###############################################################################################
+
+```{r get individuals with id}
+
+anx_ids <-phecodes %>%
+  filter(startsWith(as.character(Phecode), "300")) %>%
+  distinct(pat_id)
+
+anx_ids <- unlist(anx_ids)
+
+```
+
+```{r asd with ep}
+
+asd_p_anx <- intersect(asd_indv, anx_ids)
+
+length(asd_p_anx)
+
+```
+
+###############################################################################################
+# sleep disorders
+###############################################################################################
+
+```{r get individuals with sleep}
+
+slp_ids <-phecodes %>%
+  filter(startsWith(as.character(Phecode), "327")) %>%
+  distinct(pat_id)
+
+slp_ids <- unlist(slp_ids)
+
+```
+
+```{r asd with sleep}
+
+asd_p_slp <- intersect(asd_indv, slp_ids)
+
+length(asd_p_slp)
+
+```
+
+###############################################################################################
+# nutrient metabolism
+###############################################################################################
+
+```{r get individuals with food}
+
+fd_ids <- unique(phecodes[phecodes$Phecode == 1002,]$pat_id)
+
+fd_ids <- unlist(fd_ids)
+
+length(fd_ids)
+
+```
+
+```{r asd with sleep}
+
+asd_p_fd <- intersect(asd_indv, fd_ids)
+
+length(asd_p_fd)
+
+```
+
+###############################################################################################
+# malnutrition
+###############################################################################################
+
+```{r get individuals with malnutrition}
+
+mln_ids <-phecodes %>%
+  filter(startsWith(as.character(Phecode), "260")) %>%
+  distinct(pat_id)
+
+mln_ids <- unlist(mln_ids)
+
+length(mln_ids)
+
+```
+
+```{r asd with sleep}
+
+asd_p_mln <- intersect(asd_indv, mln_ids)
+
+length(asd_p_mln)
+
+```
+
+###############################################################################################
+# Nervous system congenital abnormalities
+###############################################################################################
+
+```{r get individuals with nsca}
+
+nsca_ids <-phecodes %>%
+  filter(startsWith(as.character(Phecode), "752")) %>%
+  distinct(pat_id)
+
+nsca_ids <- unlist(nsca_ids)
+
+length(nsca_ids)
+
+```
+
+```{r asd with sleep}
+
+asd_p_nsca <- intersect(asd_indv, nsca_ids)
+
+length(asd_p_nsca)
+
+```

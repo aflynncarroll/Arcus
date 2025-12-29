@@ -1,0 +1,537 @@
+---
+title: "Results from SAIGE shared variant PheWAS"
+author: "Alex Flynn-Carroll"
+date: "2025-11-12"
+output: html_document
+---
+
+###############################################################################################
+# library
+###############################################################################################
+
+```{r packages}
+
+library(tidyverse)
+library(dplyr)
+library(data.table)
+library(ggplot2)
+library(qqman)
+library(PheWAS)
+library(jpeg)
+library(wesanderson)
+library(ggrepel)
+library(circlize)
+
+```
+
+###############################################################################################
+# read in data
+###############################################################################################
+
+```{r}
+
+# 1. List all files ending with "allchr.txt" in a folder
+file_list <- list.files(path = "/mnt/arcus/lab/users/flynncarra/projects/20251111_saige_shared_var/results/", pattern = "^phe_[0-9]+(\\.[0-9]+)?_allchr\\.txt$", full.names = TRUE)
+
+# 2. Read each file into a list of data frames
+df_list <- lapply(file_list, function(f) {
+  df <- read.table(f, header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+  df <- subset(df, p.value < 0.01)
+  df$source_file <- basename(f)
+  df
+})
+
+# 3. Combine all data frames into one
+res <- do.call(rbind, df_list)
+
+rm(df_list)
+
+```
+
+```{r}
+
+
+
+phenos <- read.table("/mnt/arcus/lab/users/flynncarra/projects/20251103_phewas_v3_phenotypes/array_eur_total_phe_200_v2.tsv",
+                 header = TRUE,       # first row has column names
+                 sep = "\t",          # tab-separated
+                 stringsAsFactors = FALSE)
+
+
+```
+
+```{r}
+
+phe_604.1 <- read.table("/mnt/arcus/lab/users/flynncarra/projects/20251111_saige_shared_var/results/phe_604.1_allchr.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+
+
+```
+
+```{r}
+
+asd_res <- read.table("/mnt/arcus/lab/users/flynncarra/projects/20251111_saige_shared_var/results/phe_313.3_allchr.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+
+```
+
+```{r}
+
+sld_res <- read.table("/mnt/arcus/lab/users/flynncarra/projects/20251111_saige_shared_var/results/phe_315.2_allchr.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+
+```
+
+```{r icd to phecode map}
+
+phecode_map <- read.csv("../20250801_arcus_phenotype_counts/Phecode_map_v1_2_icd9_icd10cm.csv")
+
+```
+
+###############################################################################################
+# Phecodes
+###############################################################################################
+
+```{r unique phecode descriptions}
+
+phecodes <- unique(phecode_map[,c("Phecode", "PhecodeString")])
+
+phecodes <- phecodes %>%
+  group_by(Phecode) %>%
+  summarise(
+    PhecodeString = paste(unique(PhecodeString), collapse = "; "),
+    .groups = "drop"
+  )
+
+colnames(phecodes) <- c("phecode", "PhecodeString")
+
+phecodes$phecode <- as.character(phecodes$phecode)
+
+```
+
+###############################################################################################
+# plot results
+###############################################################################################
+
+```{r}
+
+res <- res[res$source_file != "phe_604.1_allchr.txt",] 
+
+
+```
+
+```{r}
+
+res$phecode <- str_extract(res$source_file, "(?<=phe_).*?(?=_allchr\\.txt)")
+
+```
+
+```{r}
+
+res_phe <- unique(res$phecode)
+
+res_phe_info <- addPhecodeInfo(res_phe)
+
+colnames(res_phe_info)[1] <- "phecode"
+
+```
+
+```{r}
+
+top_hits <- res[res$p.value<=5e-7,]
+
+top_hits <- left_join(top_hits, phecodes, by="phecode")
+
+```
+
+```{r}
+
+top_hits_save <- top_hits[,c("MarkerID", "AF_Allele2", "BETA", "SE", "p.value", "N_case", "N_ctrl", "phecode", "PhecodeString")]
+
+```
+
+```{r}
+
+write_csv(top_hits_save, "shared_var_phewas_saige.csv")
+
+```
+
+```{r}
+
+filtered_phe_man_phe <- phewasManhattan(data.frame(phenotype = res$phecode, p = res$p.value), 
+                                    annotate.angle=45, 
+                                    title = "Arcus EUR Shared Variants; Phecodes", 
+                                    annotate.size=2,
+                                    size.x.labels=5, size.y.labels=5,
+                                    significant.line = 5e-8)
+
+```
+
+```{r}
+
+filtered_phe_man_phe <- phewasManhattan(data.frame(phenotype = res$phecode, p = res$p.value), 
+                                    title = "Arcus EUR Shared Variants; Phecodes", 
+                                    annotate.size=2,
+                                    size.x.labels=5, 
+                                    size.y.labels=5,
+                                    significant.line = 5e-8,
+                                    point.size =1)+ coord_cartesian(ylim = c(2, NA))
+
+```
+
+```{r}
+
+# Save as JPEG, specify size in inches
+jpeg(
+  filename = "shared_var_phewas_gws_5e8.jpg",
+  width = 8,        # width in inches
+  height = 4,       # height in inches
+  units = "in",     # tells R that width/height are in inches
+  res = 300         # resolution in DPI (dots per inch)
+)
+
+# Your plot
+filtered_phe_man_phe
+
+# Important: close the device to finalize the file
+dev.off()
+
+```
+
+###############################################################################################
+# array enrichment
+###############################################################################################
+
+```{r}
+
+arrays <- c("array_3b4102e323", "array_eaa8d6126d", "array_34505c4e9a", "array_1c18651582", "array_e9229326cc")
+phenos$ARRAY <- apply(phenos[, arrays], 1, function(x) {
+  arr <- which(x == 1)
+  if(length(arr) == 0) return(NA)
+  paste0("array_", arr)
+})
+
+table(phenos$ARRAY) 
+
+
+```
+
+```{r}
+
+diagnoses <- grep("^phe_", colnames(phenos), value=TRUE)
+results <- data.frame(phenotype=character(), pval=numeric(), stringsAsFactors=FALSE)
+
+for(ph in diagnoses){
+  tab <- table(phenos[[ph]], phenos$ARRAY)
+  if(all(dim(tab) == c(2,5))) { 
+    p <- chisq.test(tab)$p.value
+    results <- rbind(results, data.frame(phenotype=ph, pval=p))
+  }
+}
+
+results <- results[order(results$pval),]
+results
+
+```
+
+```{r}
+
+  tab <- table(phenos$phe_604.1, phenos$ARRAY)
+  if(all(dim(tab) == c(2,5))) { 
+    p <- chisq.test(tab)$p.value
+    results <- rbind(results, data.frame(phenotype=ph, pval=p))
+  }
+
+```
+
+###############################################################################################
+# circular plot of phecodes used by category
+###############################################################################################
+
+```{r}
+
+my_phecodes <- unique(res$phecode)
+
+phecode_info <- PheWAS::pheinfo
+
+```
+
+```{r}
+
+phe_counts <- phecode_info %>%
+  filter(phecode %in% my_phecodes) %>%
+  count(group)
+
+```
+
+```{r}
+
+palette_name <- "FantasticFox1"
+n_colors <- nrow(phe_counts)
+
+my_colors <- wes_palette(palette_name, n = n_colors, type = "continuous")
+
+# Plot
+ggplot(phe_counts, aes(x = "", y = n, fill = group)) +
+  geom_bar(stat = "identity", width = 1, color = "white") +
+  coord_polar(theta = "y") +
+  theme_void() +
+  scale_fill_manual(values = my_colors) +
+  labs(title = "Phecodes by Category") +
+  theme(legend.position = "right")
+
+```
+
+```{r}
+
+phe_counts <- phe_counts %>%
+  mutate(
+    fraction = n / sum(n),
+    ymax = cumsum(fraction),
+    ymin = c(0, head(ymax, -1)),
+    label_y = (ymax + ymin) / 2
+  )
+
+
+ggplot(phe_counts, aes(ymax = ymax, ymin = ymin, xmax = 4, xmin = 3, fill = group)) +
+  geom_rect(color = "white") +
+  coord_polar(theta = "y") +
+  xlim(c(2, 4.5)) +
+  theme_void() +
+  theme(legend.position = "none") +
+  scale_fill_manual(values = my_colors) +
+  geom_text_repel(aes(x = 4.2, y = label_y, label = group),
+                  size = 3,
+                  nudge_x = 0.2,
+                  segment.color = "grey50",
+                  show.legend = FALSE) +
+  labs(title = "Phecodes by Category")
+
+```
+
+###############################################################################################
+# chord diagram
+###############################################################################################
+
+```{r}
+links <- top_hits[,c("MarkerID", "phecode")]
+
+colnames(links) <- c("from", "to")
+
+```
+
+
+```{r}
+
+
+
+# Draw the chord diagram WITHOUT default labels
+chordDiagram(
+  links,
+  transparency = 0.3,
+  annotationTrack = "grid",   # only the grid, no names
+  preAllocateTracks = 1       # allocate one track for manual labels
+)
+
+# Add labels manually
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  xcenter <- get.cell.meta.data("xcenter")
+  ylim <- get.cell.meta.data("ylim")
+  
+  circos.text(
+    x = xcenter,
+    y = ylim[1] + 0.25 * diff(ylim),  # adjust distance to plot
+    labels = get.cell.meta.data("sector.index"),
+    facing = "clockwise",
+    niceFacing = TRUE,
+    adj = c(0, 0.5),
+    cex = 0.7
+  )
+}, bg.border = NA)  # <- this removes the track border (prevents empty boxes)
+
+```
+
+###############################################################################################
+# GWAS Plots
+###############################################################################################
+
+####################### ASD
+
+```{r}
+
+qq(asd_res$p.value, main = "QQ plot for EUR ASD (313.3)")
+
+
+```
+
+```{r}
+
+chisq_asd <- qchisq(1 - asd_res$p.value, 1)
+lambda_gc_asd <- median(chisq_asd) / qchisq(0.5, 1)
+lambda_gc_asd
+
+
+```
+
+```{r}
+
+pdf("ASD_QQ.pdf", width = 6, height = 6)
+qq(plot_res[plot_res$source_file == "phe_313.3_allchr.txt",]$p.value, main = "ASD (313.3): EUR")
+dev.off()
+
+
+```
+
+```{r}
+
+jpeg("ASD_QQ.jpg", width = 1200, height = 1200, res = 150)
+qq(asd_res$p.value, main = "QQ plot for EUR ASD (313.3)")
+dev.off()
+
+
+```
+
+```{r}
+
+asd_qq <- qq(asd_res$p.value, main = "QQ plot for EUR ASD (313.3)")
+
+ggsave("ASD_QQ.png", plot = asd_qq, width = 6, height = 6)
+
+```
+
+
+```{r}
+
+asd_man <- manhattan(asd_res,
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerID",
+          p = "p.value",
+          main = "Manhattan Plot: EUR ASD (313.3)",
+          ylim = c(0, max(-log10(asd_res$p.value)) + 1))
+
+asd_man
+
+```
+
+```{r}
+
+pdf("asd_man.pdf", width = 8, height = 6)
+ manhattan(plot_res[plot_res$source_file == "phe_313.3_allchr.txt",],
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerID",
+          p = "p.value",
+          main = "ASD (313.3): EUR",
+          ylim = c(0, max(-log10(plot_res[plot_res$source_file == "phe_313.3_allchr.txt",]$p.value)) + 1))
+dev.off()
+
+
+```
+
+```{r}
+
+jpeg("asd_man.jpg", width = 8*300, height = 6*300, res = 300)
+manhattan(asd_res,
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerID",
+          p = "p.value",
+          main = "Manhattan Plot: EUR ASD (313.3)",
+          ylim = c(0, max(-log10(asd_res$p.value)) + 1))
+dev.off()
+
+
+```
+
+####################### Speech & Language Disorder
+
+```{r}
+
+qq(sld_res$p.value, main = "QQ plot for EUR Speech & Language Disorder (315.2)")
+
+
+```
+
+```{r}
+
+chisq_sld <- qchisq(1 - sld_res$p.value, 1)
+lambda_gc_sld <- median(chisq_sld) / qchisq(0.5, 1)
+lambda_gc_sld
+
+
+```
+
+```{r}
+
+jpeg("SLD_QQ.jpg", width = 1200, height = 1200, res = 150)
+qq(sld_res$p.value, main = "QQ plot for EUR Speech & Language Disorder (315.2)")
+dev.off()
+
+
+```
+
+```{r}
+
+sld_man <- manhattan(sld_res,
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerID",
+          p = "p.value",
+          main = "Manhattan Plot: EUR Speech & Language Disorder (315.2)",
+          ylim = c(0, max(-log10(sld_res$p.value)) + 1))
+
+sld_man
+
+```
+
+```{r}
+
+pdf("asd_man.pdf", width = 8, height = 6)
+sld_man
+dev.off()
+
+
+```
+
+```{r}
+
+jpeg("sld_man.jpg", width = 8*300, height = 6*300, res = 300)
+manhattan(sld_res,
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerID",
+          p = "p.value",
+          main = "Manhattan Plot: EUR Speech & Language Disorder (315.2)",
+          ylim = c(0, max(-log10(sld_res$p.value)) + 1))
+dev.off()
+
+
+```
+
+###############################################################################################
+# Locus Zoom results
+###############################################################################################
+
+chromosome, position, reference and alt alleles, and p-value (or -log10 p).
+```{r}
+
+asd_res_save <- asd_res[,c("CHR", "POS", "Allele1", "Allele2", "p.value")]
+
+```
+
+```{r}
+
+colnames(asd_res_save) <- c("chromosome", "position", "reference", "alt", "p-value" )
+
+```
+
+```{r}
+
+write.table(asd_res_save, 
+            file = "ASD_shared_saige.txt", 
+            sep = "\t",        # tab delimiter
+            row.names = FALSE, # usually don’t want row numbers
+            quote = FALSE)    
+
+```

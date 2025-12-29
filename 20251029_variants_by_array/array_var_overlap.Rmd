@@ -1,0 +1,285 @@
+---
+title: "Find variant overlap by array"
+output: html_document
+date: "2025-10-30"
+---
+
+###############################################################################################
+# library
+###############################################################################################
+
+```{r packages}
+
+library(tidyverse)
+library(dplyr)
+library(data.table)
+library(ggplot2)
+library(VennDiagram)
+library(UpSetR)
+library(gplots)
+
+```
+
+###############################################################################################
+# read in data
+###############################################################################################
+
+```{r vatiant lists}
+
+array_1c18651582 <- read.table("1c18651582_var_list.txt")
+
+array_34505c4e9a <- read.table("34505c4e9a_var_list.txt")
+
+array_eaa8d6126d <- read.table("eaa8d6126d_var_list.txt")
+
+array_3b4102e323 <- read.table("3b4102e323_var_list.txt")
+
+array_e9229326cc <- read.table("e9229326cc_var_list.txt")
+
+
+
+```
+
+```{r biosample lists}
+
+indv_1c18651582 <- read.table("indv_1c18651582.txt")
+
+indv_34505c4e9a <- read.table("indv_34505c4e9a.txt")
+
+indv_eaa8d6126d <- read.table("indv_eaa8d6126d.txt")
+
+indv_3b4102e323 <- read.table("indv_3b4102e323.txt")
+
+indv_e9229326cc <- read.table("indv_e9229326cc.txt")
+
+```
+
+```{r}
+
+array_eur_total_phe_200 <- read.csv("../20251008_phewas_saige_pheno/eur_total_phe_200.csv")
+
+```
+
+```{r}
+chr22_var <- read.table("../20251103_SAIGE_common_var/chr22_var.txt")
+
+```
+
+###############################################################################################
+# variant overlap
+###############################################################################################
+
+```{r}
+
+array_1c18651582 <- unique(array_1c18651582$V3)
+
+array_34505c4e9a <- unique(array_34505c4e9a$V3)
+
+array_eaa8d6126d <- unique(array_eaa8d6126d$V3)
+
+array_3b4102e323 <- unique(array_3b4102e323$V3)
+
+array_e9229326cc <- unique(array_e9229326cc$V3)
+
+```
+
+```{r}
+
+variant_list <- list(
+  A_1c1 = array_1c18651582,
+  A_345 = array_34505c4e9a,
+  A_eaa = array_eaa8d6126d,
+  A_3b4 = array_3b4102e323,
+  A_e92 = array_e9229326cc
+)
+
+
+```
+
+```{r}
+
+# Colors
+fill_colors <- rainbow(length(variant_list))
+
+venn.plot <- venn.diagram(
+  x = variant_list,
+  filename = NULL,            # Set to NULL to return as object, not file
+  fill = fill_colors,
+  main = "Overlap of Variants",
+  col = "black",
+  alpha = 0.3,
+  cex = 1.2,
+  cat.cex = 1,
+  margin = 0.1
+)
+
+
+```
+
+```{r}
+
+venn.diagram(
+  x = list(array_1c18651582, array_34505c4e9a, array_eaa8d6126d, array_3b4102e323, array_e9229326cc),
+  category.names = c("1c18651582" , "34505c4e9a" , "eaa8d6126d", "3b4102e323", "e9229326cc"),
+  filename = 'array_venn_diagramm.png',
+  output=TRUE
+)
+
+
+```
+
+```{r}
+
+# Convert list to binary presence/absence matrix
+all_vars <- unique(unlist(variant_list))
+df <- sapply(variant_list, function(x) all_vars %in% x)
+df <- as.data.frame(df)
+rownames(df) <- all_vars
+
+
+```
+
+```{r}
+
+# UpSet plot
+upset(df, nsets = 5, nintersects = NA)
+
+
+```
+
+```{r}
+
+jpeg(
+  filename = "array_overlap.jpg",
+  width = 2000,    # width in pixels
+  height = 1600,   # height in pixels
+  res = 300        # resolution in DPI
+)
+venn(variant_list)
+
+# Close device to save file
+dev.off()
+
+```
+
+```{r}
+
+common_vars <- Reduce(intersect, list(array_1c18651582, array_34505c4e9a, array_eaa8d6126d, array_3b4102e323, array_e9229326cc))
+length(common_vars)
+
+```
+
+```{r}
+
+writeLines(common_vars, "array_common_vars.txt", sep="\n")
+
+```
+
+```{r}
+
+com_vars_pos <- sub("^([^:]+:[^:]+):.*$", "\\1", common_vars)
+```
+
+```{r}
+
+writeLines(com_vars_pos, "array_common_vars_pos.txt", sep="\n")
+
+```
+
+```{r}
+
+chr22_vars <- all_vars[grepl("^22", all_vars)]
+
+writeLines(chr22_vars, "array_common_vars_chr22.txt", sep="\n")
+
+
+```
+
+```{r}
+
+test_22 <- chr22_var[chr22_var$V1 %in% chr22_vars,]
+
+writeLines(test_22, "array_common_vars_chr22_filt.txt", sep="\n")
+```
+
+###############################################################################################
+# individuals
+###############################################################################################
+
+ biosample_id        pat_id 
+ 
+```{r biosample lists}
+
+colnames(indv_1c18651582) <- c("biosample_id")
+
+colnames(indv_34505c4e9a) <- c("biosample_id")
+
+colnames(indv_eaa8d6126d) <- c("biosample_id")
+
+colnames(indv_3b4102e323) <- c("biosample_id")
+
+colnames(indv_e9229326cc) <- c("biosample_id")
+
+```
+
+```{r add indv ids}
+
+indv_1c18651582 <- merge(indv_1c18651582, array_eur_total_phe_200[,c("biosample_id", "pat_id")], by = "biosample_id")
+
+indv_34505c4e9a <- merge(indv_34505c4e9a, array_eur_total_phe_200[,c("biosample_id", "pat_id")], by = "biosample_id")
+
+indv_eaa8d6126d <- merge(indv_eaa8d6126d, array_eur_total_phe_200[,c("biosample_id", "pat_id")], by = "biosample_id")
+
+indv_3b4102e323 <- merge(indv_3b4102e323, array_eur_total_phe_200[,c("biosample_id", "pat_id")], by = "biosample_id")
+
+indv_e9229326cc <- merge(indv_e9229326cc, array_eur_total_phe_200[,c("biosample_id", "pat_id")], by = "biosample_id")
+
+```
+
+```{r count indv per array}
+
+df_list <- list(
+  a_1c18651582 = indv_1c18651582, 
+  a_34505c4e9a = indv_34505c4e9a, 
+  a_eaa8d6126d = indv_eaa8d6126d, 
+  a_3b4102e323 = indv_3b4102e323, 
+  a_e9229326cc = indv_e9229326cc)
+
+array_counts <- sapply(df_list, function(df) length(unique(df$pat_id)))
+
+array_counts
+
+```
+
+```{r}
+
+array_counts
+
+```
+
+```{r}
+
+indv_1c18651582$array <- "1c18651582"
+
+indv_34505c4e9a$array <- "34505c4e9a"
+
+indv_eaa8d6126d$array <- "eaa8d6126d"
+
+indv_3b4102e323$array <- "3b4102e323"
+
+indv_e9229326cc$array <- "e9229326cc"
+
+```
+
+```{r}
+
+indv_by_array <- rbind(indv_1c18651582, indv_34505c4e9a, indv_eaa8d6126d, indv_3b4102e323, indv_e9229326cc)
+
+
+```
+
+```{r}
+
+write.csv(indv_by_array, "indv_by_array.csv")
+
+```
