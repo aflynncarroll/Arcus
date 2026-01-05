@@ -1,0 +1,58 @@
+---
+title: "Output from GWAMA random ADHD"
+author: "Alex Flynn-Carroll"
+date: "2026-01-02"
+output: html_document
+---
+
+###############################################################################################
+# library
+###############################################################################################
+
+```{r packages}
+
+library(tidyverse)
+library(dplyr)
+library(data.table)
+library(ggplot2)
+library(qqman)
+library(PheWAS)
+library(jpeg)
+library(wesanderson)
+library(ggrepel)
+library(circlize)
+
+```
+
+###############################################################################################
+# read in rolled up df
+###############################################################################################
+
+```{r}
+
+# 2. Read each file into a list of data frames
+df_list <- lapply(file_list, function(f) {
+  df <- read.table(f, header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+  df <- subset(df, P.value < 0.01)
+  df$source_file <- basename(f)
+  df
+})
+
+# 3. Combine all data frames into one
+res <- do.call(rbind, df_list)
+
+rm(df_list)
+
+```
+
+```{r}
+
+res <- read.table("GWAMA_output/ae_results_phe_313.1.gwama.out", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+```
+
+```{r}
+
+asd_res <- read.table("/home/flynncarra/projects/20260102_test_GWAMA/GWAMA_output/ae_results_phe_313.3.gwama.out", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+```

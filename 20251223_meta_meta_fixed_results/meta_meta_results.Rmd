@@ -119,18 +119,7 @@ adhd_metal <- read.table("/mnt/arcus/lab/users/flynncarra/projects/20251222_AFR_
 ```{r}
 
 # 1. List all files ending with "allchr.txt" in a folder
-file_list_sig <- c("/mnt/arcus/lab/users/flynncarra/projects/20251215_hwe_1e6_eur/ru_metal_results/meta_results_phe_1005_1.txt",
-                   
-                   "/mnt/arcus/lab/users/flynncarra/projects/20251215_hwe_1e6_eur/leaf_metal_results/meta_results_phe_276.12_1.txt",
-                   
-                   "/mnt/arcus/lab/users/flynncarra/projects/20251215_hwe_1e6_eur/ru_metal_results/meta_results_phe_557_1.txt",
-                   
-                   "/mnt/arcus/lab/users/flynncarra/projects/20251215_hwe_1e6_eur/leaf_metal_results/meta_results_phe_315.1_1.txt",
-                   
-                   "/mnt/arcus/lab/users/flynncarra/projects/20251215_hwe_1e6_eur/leaf_metal_results/meta_results_phe_747.1_1.txt",
-                   
-                   "/mnt/arcus/lab/users/flynncarra/projects/20251215_hwe_1e6_eur/leaf_metal_results/meta_results_phe_755.61_1.txt",
-                   "/mnt/arcus/lab/users/flynncarra/projects/20251215_hwe_1e6_eur/leaf_metal_results/meta_results_phe_313.1_1.txt")
+file_list_sig <- c("/mnt/arcus/lab/users/flynncarra/projects/20251222_AFR_EUR_meta/metal_results/meta_results/meta_results_phe_381.11_1.txt", "/mnt/arcus/lab/users/flynncarra/projects/20251222_AFR_EUR_meta/metal_results/meta_results/meta_results_phe_367.2_1.txt", "/mnt/arcus/lab/users/flynncarra/projects/20251222_AFR_EUR_meta/metal_results/meta_results/meta_results_phe_345.1_1.txt")
 
 ```
 
@@ -153,7 +142,11 @@ rm(df_list)
 ```{r only keep those in 2 or more arrays}
 
 res_sig <- res_sig %>%
-  filter(str_count(Direction, fixed("?")) <= 3)
+  filter(!grepl("\\?", Direction))
+
+res_sig <- res_sig %>%
+  filter(nchar(Direction) == 2)
+
 
 ```
 
@@ -172,7 +165,6 @@ res_sig$CHR <- as.numeric(res_sig$CHR)
 res_sig$POS <- as.numeric(res_sig$POS)
 
 ```
-
 
 ###############################################################################################
 # Phecodes
@@ -223,7 +215,7 @@ length(unique(res$MarkerName))
 
 ```{r}
 
-write_csv(top_hits, "top_hits_afr__eur_1e6_meta_phewas.csv")
+write_csv(top_hits, "top_hits_afr_eur_1e6_meta_phewas.csv")
 
 ```
 
@@ -257,5 +249,122 @@ filtered_phe_man_phe
 
 # Important: close the device to finalize the file
 dev.off()
+
+```
+
+###############################################################################################
+# Individual GWASs
+###############################################################################################
+
+```{r}
+
+make_phecode_qq <- function(df, phecode_num, phecode_string, 
+                            pval_col = "P.value",
+                            outdir = ".") {
+  # Extract p-values
+  pvals <- df[[pval_col]]
+  
+  # Remove NA and invalid values
+  pvals <- pvals[!is.na(pvals) & pvals > 0 & pvals <= 1]
+  
+  # Compute lambda
+  chisq_vals <- qchisq(1 - pvals, df = 1)
+  lambda_gc <- median(chisq_vals) / qchisq(0.5, df = 1)
+  
+  # Title for printing and plot
+  title_text <- sprintf("%s (%s): A+E (λ = %.3f)", 
+                        phecode_string, phecode_num, lambda_gc)
+  
+  # Output filename
+  file_name <- file.path(outdir, sprintf("QQ_%s_afr_eur.jpg", phecode_num))
+  
+  # Save QQ plot
+  jpeg(file_name, width = 1200, height = 1200, res = 150)
+  qq(pvals, main = title_text)
+  dev.off()
+  
+  message("Saved: ", file_name)
+  return(lambda_gc)
+}
+
+```
+
+```{r}
+
+phe_381.11_man <- manhattan(res_sig[res_sig$source_file == "meta_results_phe_381.11_1.txt",],
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerName",
+          p = "P.value",
+          main = "Suppurative and unspecified otitis media (381.11)",
+          ylim = c(0, max(-log10(res_sig$P.value)) + 1))
+
+phe_381.11_man
+
+```
+
+```{r}
+
+jpeg("afr_eur_phe_381.11_man.jpg", width = 8*300, height = 6*300, res = 300)
+
+manhattan(res_sig[res_sig$source_file == "meta_results_phe_381.11_1.txt",],
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerName",
+          p = "P.value",
+          main = "Suppurative and unspecified otitis media (381.11)",
+          ylim = c(0, max(-log10(res_sig$P.value)) + 1))
+
+dev.off()
+
+```
+
+```{r}
+
+make_phecode_qq(res_sig[res_sig$source_file == "meta_results_phe_381.11_1.txt",], 381.11, "Suppurative and unspecified otitis media")
+
+```
+
+```{r}
+
+jpeg("afr_eur_phe_367.2_man.jpg", width = 8*300, height = 6*300, res = 300)
+
+manhattan(res_sig[res_sig$source_file == "meta_results_phe_367.2_1.txt",],
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerName",
+          p = "P.value",
+          main = "Astigmatism (367.2)",
+          ylim = c(0, max(-log10(res_sig$P.value)) + 1))
+
+dev.off()
+
+```
+
+```{r}
+
+make_phecode_qq(res_sig[res_sig$source_file == "meta_results_phe_367.2_1.txt",], 367.2, "Astigmatism")
+
+```
+
+```{r}
+
+jpeg("afr_eur_phe_345.1_man.jpg", width = 8*300, height = 6*300, res = 300)
+
+manhattan(res_sig[res_sig$source_file == "meta_results_phe_345.1_1.txt",],
+          chr = "CHR",
+          bp = "POS",
+          snp = "MarkerName",
+          p = "P.value",
+          main = "Epilepsy (345.1)",
+          ylim = c(0, max(-log10(res_sig$P.value)) + 1))
+
+dev.off()
+
+```
+
+```{r}
+
+make_phecode_qq(res_sig[res_sig$source_file == "meta_results_phe_345.1_1.txt",], 345.1, "Epilepsy")
 
 ```

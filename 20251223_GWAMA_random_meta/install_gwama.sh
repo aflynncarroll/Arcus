@@ -33,3 +33,5 @@ cd /mnt/arcus/lab/users/flynncarra/projects/20251223_GWAMA_random_meta/
 --name_se StdErr \
 --random \
 --output meta_results_phe_313.1_1.GWAMA
+
+
